@@ -1,0 +1,10 @@
+{
+  "name": "claude-buddy",
+  "version": "2.0.0",
+  "description": "Summon a pixel buddy for your Claude Code session with /buddy. It lives on your desktop and acts out what Claude is doing.",
+  "author": { "name": "sideswipeishacking", "url": "https://github.com/sideswipeishacking" },
+  "homepage": "https://github.com/sideswipeishacking/claude-buddy",
+  "repository": "https://github.com/sideswipeishacking/claude-buddy",
+  "license": "MIT",
+  "keywords": ["desktop", "companion", "pixel-art", "pet", "status"]
+}

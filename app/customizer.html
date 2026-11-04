@@ -1,0 +1,336 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+<title>Buddy Workshop</title>
+<style>
+  :root {
+    --bg: #15121c; --panel: #221d2c; --panel2: #2b2438; --ink: #f4ecdf; --muted: #a89fb5;
+    --gold: #ffc431; --gold-dark: #b8860b; --accent: #d97757; --line: #3d3450; --good: #5fd38d;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; user-select: none; }
+  .frame { position: absolute; inset: 0; border: 3px solid var(--gold); box-shadow: inset 0 0 0 3px #000, inset 0 0 0 6px var(--gold-dark); display: flex; flex-direction: column; }
+  header { -webkit-app-region: drag; display: flex; align-items: center; gap: 14px; padding: 14px 18px 10px; border-bottom: 3px solid #000; background: linear-gradient(#2d2340, #1d1729); }
+  header canvas { image-rendering: pixelated; }
+  header .sub { color: var(--muted); font: 12px Consolas, monospace; }
+  header .close { -webkit-app-region: no-drag; margin-left: auto; width: 30px; height: 30px; background: #3a2f4d; color: var(--ink); border: 2px solid #000; font: 700 15px Consolas, monospace; cursor: pointer; box-shadow: inset -2px -2px 0 rgba(0,0,0,.35), inset 2px 2px 0 rgba(255,255,255,.12); }
+  .close:hover { background: #f06a5d; color: #000; }
+  main { flex: 1; display: grid; grid-template-columns: 350px 1fr; gap: 14px; padding: 14px 18px; min-height: 0; }
+  .panel { background: var(--panel); border: 3px solid #000; box-shadow: inset 0 0 0 2px var(--line); padding: 12px; }
+  .hero { display: flex; flex-direction: column; gap: 10px; }
+  #stage { width: 320px; height: 290px; image-rendering: pixelated; border: 3px solid #000; display: block; }
+  .stats { display: flex; justify-content: space-between; font: 700 12px Consolas, monospace; color: var(--gold); }
+  .stats .cls { color: #9fe0b8; }
+  label.row { display: grid; grid-template-columns: 82px 1fr 46px; align-items: center; gap: 8px; font: 12px Consolas, monospace; color: var(--muted); }
+  input[type=text] { width: 100%; background: #120f18; color: var(--ink); border: 2px solid #000; box-shadow: inset 0 0 0 1px var(--line); padding: 6px 8px; font: 13px Consolas, monospace; outline: none; }
+  input[type=text]:focus { box-shadow: inset 0 0 0 1px var(--gold); }
+  input[type=range] { width: 100%; accent-color: var(--gold); }
+  .val { font: 700 12px Consolas, monospace; color: var(--ink); text-align: right; }
+  .slots { display: flex; flex-direction: column; min-height: 0; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .tab { padding: 7px 12px 6px; background: var(--panel2); color: var(--muted); border: 2px solid #000; font: 700 12px Consolas, monospace; letter-spacing: 1px; cursor: pointer; box-shadow: inset -2px -2px 0 rgba(0,0,0,.35), inset 2px 2px 0 rgba(255,255,255,.08); }
+  .tab:hover { color: var(--ink); }
+  .tab.on { background: var(--gold); color: #1a1408; }
+  .tab .eq { display: inline-block; width: 7px; height: 7px; margin-left: 6px; background: var(--good); vertical-align: 1px; }
+  .grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; align-content: start; padding-right: 4px; }
+  .grid::-webkit-scrollbar { width: 10px; } .grid::-webkit-scrollbar-thumb { background: var(--line); border: 2px solid var(--panel); }
+  .tile { background: #181420; border: 2px solid #000; box-shadow: inset 0 0 0 2px #2c2539; cursor: pointer; text-align: center; padding: 6px 4px 5px; }
+  .tile:hover { box-shadow: inset 0 0 0 2px var(--muted); }
+  .tile.sel { box-shadow: inset 0 0 0 3px var(--gold); background: #2a2214; }
+  .tile canvas { width: 80px; height: 64px; image-rendering: pixelated; display: block; margin: 0 auto; }
+  .tile .n { font: 11px Consolas, monospace; color: var(--muted); margin-top: 3px; text-transform: capitalize; }
+  .tile.sel .n { color: var(--gold); }
+  h3 { margin: 4px 0 8px; font: 700 12px Consolas, monospace; letter-spacing: 1.5px; color: var(--gold); }
+  .swatches { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .sw { width: 34px; height: 34px; border: 2px solid #000; cursor: pointer; box-shadow: inset -3px -3px 0 rgba(0,0,0,.25), inset 3px 3px 0 rgba(255,255,255,.2); }
+  .sw.sel { outline: 3px solid var(--gold); outline-offset: 1px; }
+  .sw.custom { display: grid; place-items: center; background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); position: relative; }
+  .sw.custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .toggle { display: flex; align-items: center; gap: 10px; font: 700 12px Consolas, monospace; margin-bottom: 12px; cursor: pointer; }
+  .box { width: 20px; height: 20px; border: 2px solid #000; background: #120f18; box-shadow: inset 0 0 0 1px var(--line); display: grid; place-items: center; color: var(--good); font-weight: 900; }
+  footer { display: flex; align-items: center; gap: 10px; padding: 10px 18px 14px; border-top: 3px solid #000; background: #1b1624; }
+  .btn { padding: 9px 16px 8px; border: 2px solid #000; font: 700 12px Consolas, monospace; letter-spacing: 1px; cursor: pointer; color: var(--ink); background: #3a2f4d; box-shadow: inset -3px -3px 0 rgba(0,0,0,.35), inset 3px 3px 0 rgba(255,255,255,.12); }
+  .btn:hover { filter: brightness(1.15); }
+  .btn:active { transform: translateY(1px); box-shadow: inset 3px 3px 0 rgba(0,0,0,.35); }
+  .btn.primary { background: var(--gold); color: #1a1408; }
+  .spacer { flex: 1; }
+</style>
+</head>
+<body>
+<div class="frame">
+  <header>
+    <canvas id="title"></canvas>
+    <span class="sub" id="sub"></span>
+    <button class="close" id="close" title="Close (Esc)">✕</button>
+  </header>
+  <main>
+    <section class="panel hero">
+      <canvas id="stage" width="320" height="290"></canvas>
+      <div class="stats"><span id="level">LVL 1</span><span class="cls" id="cls">Apprentice Clawd</span></div>
+      <label class="row">Nickname <input type="text" id="nick" maxlength="18" placeholder=""><span></span></label>
+      <label class="row">Size <input type="range" id="size" min="0.5" max="2" step="0.25"><span class="val" id="sizeVal"></span></label>
+      <div style="font: 11px Consolas, monospace; color: var(--muted)" id="sizeHint"></div>
+    </section>
+    <section class="panel slots">
+      <div class="tabs" id="tabs"></div>
+      <div id="body" class="grid"></div>
+    </section>
+  </main>
+  <footer>
+    <button class="btn" id="random">🎲 RANDOMIZE</button>
+    <button class="btn" id="reset">↺ RESET</button>
+    <label class="toggle" id="defToggle" style="margin:0 0 0 8px"><span class="box" id="defBox"></span> Use as default for new buddies</label>
+    <span class="spacer"></span>
+    <button class="btn" id="cancel">CANCEL</button>
+    <button class="btn primary" id="equip">EQUIP ✓</button>
+  </footer>
+</div>
+<script src="sprites.js"></script>
+<script>
+'use strict';
+const TABS = [
+  ['hat', 'HAT'], ['hand', 'HAND'], ['face', 'FACE'], ['neck', 'NECK'], ['back', 'BACK'], ['color', 'COLOUR'], ['helpers', 'HELPERS'],
+];
+const SHOWCASE = ['idle', 'cheer', 'typing', 'coding', 'reading', 'celebrate', 'snack', 'look', 'wizard'];
+let look, original, sizes, asDefault = false, tab = 'hat';
+const dpr = window.devicePixelRatio || 1;
+
+const clone = (o) => JSON.parse(JSON.stringify(o));
+const shortLook = (l) => ({ hat: l.hat, hand: l.hand, face: l.face, neck: l.neck, back: l.back, body: l.body, eye: l.eye });
+
+// ---------------------------------------------------------------- drawing helpers
+function paint(cv, pixels, scale, ax, ay) {
+  const g = cv.getContext('2d');
+  const k = Math.max(1, Math.round(scale));
+  for (const p of pixels) {
+    g.globalAlpha = p.a ?? 1;
+    g.fillStyle = p.c;
+    g.fillRect(Math.round(ax + p.x * k), Math.round(ay + p.y * k), k, k);
+  }
+  g.globalAlpha = 1;
+}
+
+function drawTitle() {
+  const cv = document.getElementById('title');
+  const px = Clawd.text('BUDDY WORKSHOP').pixels;
+  const s = 3;
+  cv.width = (14 * 4) * s + 6; cv.height = 5 * s + 6;
+  cv.style.width = cv.width + 'px'; cv.style.height = cv.height + 'px';
+  const g = cv.getContext('2d');
+  for (const p of px) { g.fillStyle = '#000'; g.fillRect(p.x * s + 3, p.y * s + 3, s, s); }
+  for (const p of px) { g.fillStyle = p.y < 2 ? '#ffe7a0' : '#ffc431'; g.fillRect(p.x * s, p.y * s, s, s); }
+}
+
+// ---------------------------------------------------------------- the hero stage
+const stage = document.getElementById('stage');
+stage.width = 320 * dpr; stage.height = 290 * dpr;
+const sg = stage.getContext('2d');
+const stars = Array.from({ length: 26 }, (_, i) => ({ x: (i * 97) % 320, y: (i * 53) % 150, p: i * 0.7 }));
+
+function drawStage(t) {
+  const W = 320 * dpr, H = 290 * dpr;
+  const grad = sg.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#1c1631'); grad.addColorStop(1, '#3a2c55');
+  sg.fillStyle = grad; sg.fillRect(0, 0, W, H);
+  for (const s of stars) if (Math.sin(t / 600 + s.p) > -0.3) { sg.fillStyle = '#e8dcff'; sg.fillRect(s.x * dpr, s.y * dpr, 2 * dpr, 2 * dpr); }
+  // pixel ground
+  const gy = 240 * dpr;
+  sg.fillStyle = '#3f8a4a'; sg.fillRect(0, gy, W, 8 * dpr);
+  sg.fillStyle = '#5bb85f'; for (let x = 0; x < W; x += 8 * dpr) sg.fillRect(x, gy - 2 * dpr, 4 * dpr, 2 * dpr);
+  sg.fillStyle = '#6b4a2b'; sg.fillRect(0, gy + 8 * dpr, W, H - gy);
+  sg.fillStyle = '#583b22'; for (let x = 0; x < W; x += 12 * dpr) sg.fillRect(x + ((x / dpr) % 24 ? 0 : 4 * dpr), gy + 20 * dpr, 6 * dpr, 3 * dpr);
+
+  const name = SHOWCASE[Math.floor(t / 2600) % SHOWCASE.length];
+  const f = Math.floor((t / 1000) * Clawd.fps(name)) % Clawd.frameCount(name);
+  const s = Math.round(6.5 * dpr * Math.min(1.25, Math.max(0.75, look.size)));
+  paint(stage, Clawd.frame(name, f, shortLook(look), false).pixels, s, W / 2, gy);
+  if (look.helpers !== false) {
+    const hs = Math.max(1, Math.round(s * look.helper.size));
+    const helperLook = { hat: look.helper.hat, body: look.helper.body, eye: look.eye };
+    const gap = 10 * s + 10 * hs + 6 * dpr; // half the hero + half a helper + a little room
+    for (const [i, side] of [[0, -1], [1, 1]]) {
+      const walkF = Math.floor(t / 110) % 4;
+      const x = W / 2 + side * (gap + (1 + Math.sin(t / 700 + i * 2)) * 6 * dpr);
+      paint(stage, Clawd.frame('walk', walkF, helperLook, Math.cos(t / 700 + i * 2) * side < 0).pixels, hs, x, gy);
+    }
+  }
+  requestAnimationFrame(drawStage);
+}
+
+// ---------------------------------------------------------------- flavour: level & class
+function classTitle(l) {
+  const has = (...k) => k.some((x) => [l.hat, l.hand, l.face, l.neck, l.back].includes(x));
+  if (has('wizard', 'staff', 'wand')) return 'Arcane Coder';
+  if (has('hardhat', 'torch')) return 'Build Engineer';
+  if (has('crown', 'tiara', 'royal')) return 'Royal Reviewer';
+  if (has('ninja', 'mask')) return 'Stealth Debugger';
+  if (has('viking', 'sword')) return 'Bug Slayer';
+  if (has('pirate', 'flag')) return 'Merge Pirate';
+  if (has('chef', 'mug')) return 'Code Chef';
+  if (has('halo', 'angel')) return 'Guardian of Main';
+  if (has('horns', 'bat')) return 'Chaos Refactorer';
+  if (has('cowboy')) return 'Deploy Wrangler';
+  if (has('party', 'balloon')) return 'Release Party Host';
+  if (has('gradcap', 'glasses', 'monocle')) return 'Doc Scholar';
+  if (has('broom')) return 'Tech-Debt Sweeper';
+  if (has('antenna', 'headset')) return 'Signal Whisperer';
+  if (has('bunny', 'cat', 'bow', 'flower')) return 'Morale Officer';
+  return 'Apprentice Clawd';
+}
+
+function refreshStats() {
+  const n = ['hat', 'hand', 'face', 'neck', 'back'].filter((k) => look[k]).length + (look.body !== Clawd.COL.body ? 1 : 0);
+  document.getElementById('level').textContent = `LVL ${n + 1}`;
+  document.getElementById('cls').textContent = classTitle(look);
+  document.getElementById('sizeVal').textContent = `×${look.size}`;
+  const px = (base) => Math.max(1, Math.round(base * look.size));
+  document.getElementById('sizeHint').textContent = `Laptop screen: ${px(sizes.internal)} px/pixel · other monitors: ${px(sizes.external)} px/pixel`;
+  document.getElementById('defBox').textContent = asDefault ? '✓' : '';
+}
+
+// ---------------------------------------------------------------- tabs & tiles
+function tileCanvas(tileLook, anim = 'idle', scale = 3) {
+  const cv = document.createElement('canvas');
+  cv.width = 80 * dpr; cv.height = 64 * dpr;
+  paint(cv, Clawd.frame(anim, 0, tileLook, false).pixels, Math.round(scale * dpr), cv.width / 2, cv.height - 6 * dpr);
+  return cv;
+}
+
+function itemGrid(host, keys, current, makeLook, choose, anim) {
+  for (const key of [null, ...keys]) {
+    const tile = document.createElement('div');
+    tile.className = 'tile' + (current === key ? ' sel' : '');
+    tile.append(tileCanvas(makeLook(key), anim));
+    const n = document.createElement('div');
+    n.className = 'n';
+    n.textContent = key || 'none';
+    tile.append(n);
+    tile.onclick = () => { choose(key); changed(); };
+    host.append(tile);
+  }
+}
+
+function swatches(host, colours, current, choose) {
+  const row = document.createElement('div');
+  row.className = 'swatches';
+  for (const [name, hex] of Object.entries(colours)) {
+    const sw = document.createElement('div');
+    sw.className = 'sw' + (current === hex ? ' sel' : '');
+    sw.style.background = hex;
+    sw.title = name;
+    sw.onclick = () => { choose(hex); changed(); };
+    row.append(sw);
+  }
+  const custom = document.createElement('label');
+  custom.className = 'sw custom' + (Object.values(colours).includes(current) ? '' : ' sel');
+  custom.title = 'Custom colour';
+  const input = document.createElement('input');
+  input.type = 'color';
+  input.value = current;
+  input.oninput = () => { choose(input.value); changed(false); };
+  input.onchange = () => changed();
+  custom.append(input);
+  row.append(custom);
+  host.append(row);
+}
+
+function render() {
+  const tabs = document.getElementById('tabs');
+  tabs.textContent = '';
+  for (const [key, label] of TABS) {
+    const b = document.createElement('button');
+    b.className = 'tab' + (tab === key ? ' on' : '');
+    b.textContent = label;
+    if (['hat', 'hand', 'face', 'neck', 'back'].includes(key) && look[key]) { const eq = document.createElement('span'); eq.className = 'eq'; b.append(eq); }
+    b.onclick = () => { tab = key; render(); };
+    tabs.append(b);
+  }
+  const body = document.getElementById('body');
+  body.textContent = '';
+  body.className = 'grid';
+  const base = shortLook(look);
+  if (tab === 'hat') itemGrid(body, Clawd.HAT_ORDER, look.hat, (k) => ({ ...base, hat: k }), (k) => { look.hat = k; });
+  else if (['hand', 'face', 'neck', 'back'].includes(tab)) {
+    itemGrid(body, Object.keys(Clawd.ACCESSORIES[tab]), look[tab], (k) => ({ ...base, [tab]: k }), (k) => { look[tab] = k; }, tab === 'back' ? 'cheer' : 'idle');
+  } else if (tab === 'color') {
+    body.className = '';
+    const h = (t) => { const e = document.createElement('h3'); e.textContent = t; body.append(e); };
+    h('BODY COLOUR');
+    swatches(body, Clawd.COLORS, look.body, (c) => { look.body = c; });
+    h('EYE COLOUR');
+    swatches(body, Clawd.EYE_COLORS, look.eye, (c) => { look.eye = c; });
+  } else if (tab === 'helpers') {
+    body.className = '';
+    const tg = document.createElement('label');
+    tg.className = 'toggle';
+    tg.innerHTML = `<span class="box">${look.helpers !== false ? '✓' : ''}</span> Show helper Clawds when this session uses sub-agents`;
+    tg.onclick = () => { look.helpers = look.helpers === false; changed(); };
+    body.append(tg);
+    const sizeRow = document.createElement('label');
+    sizeRow.className = 'row';
+    sizeRow.innerHTML = `Helper size <input type="range" min="0.25" max="1" step="0.25" value="${look.helper.size}"><span class="val">×${look.helper.size}</span>`;
+    sizeRow.querySelector('input').oninput = (e) => { look.helper.size = Number(e.target.value); sizeRow.querySelector('.val').textContent = `×${look.helper.size}`; changed(false); };
+    body.append(sizeRow);
+    const h = (t) => { const e = document.createElement('h3'); e.style.marginTop = '14px'; e.textContent = t; body.append(e); };
+    h('HELPER COLOUR');
+    swatches(body, Clawd.COLORS, look.helper.body, (c) => { look.helper.body = c; });
+    h('HELPER HAT');
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    grid.style.maxHeight = '190px';
+    itemGrid(grid, Clawd.HAT_ORDER, look.helper.hat, (k) => ({ hat: k, body: look.helper.body, eye: look.eye }), (k) => { look.helper.hat = k; });
+    body.append(grid);
+  }
+  refreshStats();
+}
+
+function changed(rerender = true) {
+  buddy.send('look-preview', look);
+  if (rerender) render(); else refreshStats();
+}
+
+function randomize() {
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const maybe = (arr, p) => (Math.random() < p ? pick(arr) : null);
+  look.hat = pick(Clawd.HAT_ORDER);
+  for (const slot of ['hand', 'face', 'neck', 'back']) look[slot] = maybe(Object.keys(Clawd.ACCESSORIES[slot]), 0.5);
+  look.body = Math.random() < 0.4 ? Clawd.COL.body : pick(Object.values(Clawd.COLORS));
+  look.helper.body = Math.random() < 0.5 ? look.body : pick(Object.values(Clawd.COLORS));
+  look.helper.hat = maybe(Clawd.HAT_ORDER, 0.6);
+  changed();
+}
+
+buddy.on('init', (d) => {
+  Clawd.loadPoses(d.poses);
+  look = clone(d.look);
+  original = clone(d.look);
+  sizes = d.sizes;
+  asDefault = d.isDefault;
+  drawTitle();
+  document.getElementById('sub').textContent = `· equipping ${d.name}${d.project && d.project !== d.name ? ` (${d.project})` : ''}`;
+  const nick = document.getElementById('nick');
+  nick.value = d.nickname;
+  nick.placeholder = d.project || 'nickname';
+  const size = document.getElementById('size');
+  size.value = look.size;
+  size.oninput = () => { look.size = Number(size.value); changed(false); };
+  document.getElementById('random').onclick = randomize;
+  document.getElementById('reset').onclick = () => { look = clone(original); size.value = look.size; changed(); };
+  document.getElementById('defToggle').onclick = () => { asDefault = !asDefault; refreshStats(); };
+  const save = () => buddy.send('look-save', { look, nickname: nick.value.trim(), asDefault });
+  document.getElementById('equip').onclick = save;
+  const close = () => buddy.send('win-close');
+  document.getElementById('cancel').onclick = close;
+  document.getElementById('close').onclick = close;
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close();
+    if (e.key === 'Enter' && document.activeElement !== nick) save();
+  });
+  render();
+  requestAnimationFrame(drawStage);
+});
+</script>
+</body>
+</html>

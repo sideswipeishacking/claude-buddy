@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+<title>Claude Buddy - animation gallery</title>
+<style>
+  :root { --bg: #1f1e1d; --panel: #2a2826; --ink: #f2ebe4; --muted: #a39b93; --accent: #d97757; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.4 "Segoe UI", system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 1; display: flex; gap: 16px; align-items: center; padding: 12px 20px; background: var(--bg); border-bottom: 2px solid var(--accent); }
+  header h1 { margin: 0; font: 700 15px Consolas, monospace; color: #f0a07f; }
+  header label { color: var(--muted); }
+  select { background: var(--panel); color: var(--ink); border: 1px solid #4a4542; padding: 3px 6px; }
+  main { padding: 16px 20px 40px; }
+  h2 { margin: 22px 0 10px; font: 600 12px "Segoe UI"; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .tile { background: var(--panel); padding: 8px 8px 6px; text-align: center; }
+  .tile canvas { width: 140px; height: 120px; image-rendering: pixelated; }
+  .tile .n { font: 12px Consolas, monospace; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CLAUDE BUDDY · ANIMATIONS</h1>
+  <label>Hat <select id="hat"><option value="">none</option></select></label>
+  <label><input type="checkbox" id="flip"> Facing left</label>
+</header>
+<main id="main"></main>
+<script src="sprites.js"></script>
+<script>
+'use strict';
+const GROUPS = {
+  'Moving around': ['idle', 'look', 'walk', 'run', 'zoom', 'ninja', 'crouch', 'jump', 'fall', 'land', 'pancake', 'held', 'startled', 'wave', 'poof'],
+  'Typing along with you': ['typing', 'typeErase'],
+  'Hatching & treats': ['eggIdle', 'egg', 'snack'],
+  'Thinking & planning': ['thinking', 'thinkWalk', 'thinkCode', 'meditate', 'idea', 'eureka', 'planning', 'todo'],
+  'Reading & researching': ['reading', 'reviewing', 'searching', 'scroll', 'web', 'browsing'],
+  'Building': ['coding', 'building', 'debugging', 'bugs', 'tools', 'testing', 'lifting', 'loop', 'sync', 'git', 'launch', 'servers', 'infra', 'terminal', 'monitor', 'compacting', 'hourglass', 'delegating'],
+  'Needs you': ['alert', 'asking', 'permission', 'shield'],
+  'Trouble': ['dizzy', 'dizzyBase', 'confused', 'errorState', 'critical', 'xblock', 'angry', 'rage', 'fine', 'crying', 'sad', 'sadBase', 'failed', 'alarm', 'disconnected'],
+  'Celebrating': ['celebrate', 'cheer', 'success', 'check', 'api', 'trending', 'rocket', 'confetti', 'milestone'],
+  'Social & idle': ['welcome', 'hi', 'ola', 'love', 'nap', 'sleeping', 'pie', 'leaf', 'plant', 'mushrooms', 'grow', 'wizard', 'grumpy', 'spark', 'malware'],
+};
+const tiles = [];
+buddy.on('init', ({ poses, hats }) => {
+  Clawd.loadPoses(poses);
+  const hatSel = document.getElementById('hat');
+  for (const h of hats) hatSel.add(new Option(h, h));
+  const main = document.getElementById('main');
+  for (const [title, names] of Object.entries(GROUPS)) {
+    const h = document.createElement('h2'); h.textContent = title; main.append(h);
+    const grid = document.createElement('div'); grid.className = 'grid'; main.append(grid);
+    for (const name of names) {
+      const tile = document.createElement('div'); tile.className = 'tile';
+      const cv = document.createElement('canvas'); cv.width = 140 * devicePixelRatio; cv.height = 120 * devicePixelRatio;
+      const label = document.createElement('div'); label.className = 'n'; label.textContent = name;
+      tile.append(cv, label); grid.append(tile);
+      tiles.push({ name, cv });
+    }
+  }
+  requestAnimationFrame(loop);
+});
+function loop(t) {
+  requestAnimationFrame(loop);
+  const hat = document.getElementById('hat').value, flip = document.getElementById('flip').checked;
+  const k = 4 * devicePixelRatio;
+  for (const { name, cv } of tiles) {
+    const g = cv.getContext('2d');
+    g.clearRect(0, 0, cv.width, cv.height);
+    g.fillStyle = '#3a3633'; g.fillRect(0, cv.height - 18 * devicePixelRatio, cv.width, 1 * devicePixelRatio);
+    const f = Math.floor((t / 1000) * Clawd.fps(name)) % Clawd.frameCount(name);
+    const fr = Clawd.frame(name, f, hat, flip && Clawd.canFlip(name));
+    const ax = cv.width / 2, ay = cv.height - 18 * devicePixelRatio;
+    for (const p of fr.pixels) {
+      g.globalAlpha = p.a; g.fillStyle = p.c;
+      g.fillRect(Math.round(ax + p.x * k), Math.round(ay + p.y * k), Math.ceil(k), Math.ceil(k));
+    }
+    g.globalAlpha = 1;
+  }
+}
+</script>
+</body>
+</html>

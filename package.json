@@ -1,0 +1,29 @@
+{
+  "name": "claude-buddy",
+  "productName": "Claude Buddy",
+  "version": "2.0.0",
+  "description": "Pixel desktop companions for your Claude Code sessions: one buddy per session, acting out what Claude is doing",
+  "main": "app/main.js",
+  "bin": { "claude-buddy": "bin/claude-buddy.js" },
+  "scripts": {
+    "start": "electron .",
+    "test": "node tools/features-test.js && node tools/climb-test.js",
+    "privacy-check": "node tools/privacy-check.js",
+    "setup": "node bin/claude-buddy.js install"
+  },
+  "dependencies": {
+    "electron": "^45.2.1",
+    "koffi": "^3.3.6"
+  },
+  "optionalDependencies": {
+    "uiohook-napi": "^1.5.4"
+  },
+  "engines": { "node": ">=18" },
+  "os": ["win32", "darwin", "linux"],
+  "repository": { "type": "git", "url": "git+https://github.com/sideswipeishacking/claude-buddy.git" },
+  "homepage": "https://github.com/sideswipeishacking/claude-buddy#readme",
+  "bugs": { "url": "https://github.com/sideswipeishacking/claude-buddy/issues" },
+  "author": "sideswipeishacking",
+  "license": "MIT",
+  "keywords": ["claude", "claude-code", "desktop-pet", "pixel-art", "electron", "companion"]
+}

@@ -1,0 +1,19 @@
+# dependencies
+node_modules/
+
+# logs, local state, OS junk
+*.log
+launch.json
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# local-only notes and secrets
+CLAUDE.local.md
+.env
+.env.*
+*.local.json
+
+# build output
+dist/
+out/

@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>Claude Buddy overlay</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: transparent; width: 100vw; height: 100vh; user-select: none; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; }
+  body.grab { cursor: grab; }
+  body.grabbing { cursor: grabbing; }
+  body.point { cursor: pointer; }
+  body.placing, body.placing * { cursor: crosshair !important; }
+
+  .card {
+    position: fixed; width: 300px; box-sizing: border-box; padding: 10px 12px 10px;
+    background: #1f1e1d; color: #f2ebe4; border: 2px solid #d97757;
+    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+    font: 12px/1.4 "Segoe UI", system-ui, sans-serif; cursor: default;
+    transition: opacity 120ms ease-out, transform 120ms ease-out;
+  }
+  .card.hidden { opacity: 0; transform: translateY(4px); pointer-events: none; }
+  .card .top { display: flex; align-items: center; gap: 8px; }
+  .card .name { font: 700 13px Consolas, "Cascadia Mono", monospace; color: #f0a07f; letter-spacing: 0.5px; }
+  .card .src { margin-left: auto; font-size: 10.5px; color: #a39b93; white-space: nowrap; }
+  .card .status { margin-top: 3px; font-weight: 600; font-size: 13px; color: #fff; }
+  .card .phase { margin-top: 5px; color: #e6ddd5; }
+  .card .phase b { color: #9fe0b8; font-weight: 600; }
+  .card .thought { margin-top: 6px; padding-left: 8px; border-left: 2px solid #4a4542; color: #cfc6be; font-style: italic; }
+  .card .task { margin-top: 6px; font-size: 11px; color: #a39b93; }
+  .card .meta { margin-top: 5px; font-size: 10.5px; color: #8d857e; }
+  .card .queued { margin-top: 6px; font-size: 11px; color: #f2c14e; word-break: break-all; }
+  .card .empty { display: none; }
+
+  /* The Overlord's card: usage limits and the buddy roster. */
+  .card.ov { width: 320px; border-color: #3fd0ff; box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35), 0 0 18px rgba(63, 208, 255, 0.25); cursor: pointer; }
+  .card.ov .name { color: #9eeaff; letter-spacing: 2px; }
+  .urow { margin-top: 8px; }
+  .uhead { display: flex; justify-content: space-between; font-size: 11.5px; color: #e6ddd5; }
+  .uhead b { font: 700 11.5px Consolas, monospace; color: #fff; }
+  .ubar { margin-top: 3px; height: 8px; background: #3a3633; border: 1px solid #000; }
+  .ubar i { display: block; height: 100%; }
+  .usub { margin-top: 2px; font-size: 10.5px; color: #8d857e; }
+  .err { margin-top: 6px; font-size: 11px; color: #f06a5d; }
+  .blist { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #4a4542; }
+  .bhead { font: 700 11px Consolas, monospace; color: #9eeaff; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .brow { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 11.5px; }
+  .brow .dot { width: 7px; height: 7px; flex: none; background: #5a5450; }
+  .brow.on .dot { background: #5fd38d; box-shadow: 0 0 6px #5fd38d; }
+  .brow .sw { width: 9px; height: 9px; flex: none; border: 1px solid #000; }
+  .brow .bn { font: 700 11.5px Consolas, monospace; color: #f0a07f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+  .brow.off .bn { color: #8d857e; }
+  .brow .bs { margin-left: auto; color: #a39b93; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+  .hint { margin-top: 8px; font-size: 10.5px; color: #3fd0ff; }
+
+  .ctx { position: relative; width: 34px; height: 34px; flex: none; }
+  .ctx svg { width: 34px; height: 34px; transform: rotate(-90deg); }
+  .ctx circle { fill: none; stroke-width: 4; }
+  .ctx .bg { stroke: #3a3633; }
+  .ctx .fg { stroke-linecap: butt; transition: stroke-dasharray 300ms ease-out; }
+  .ctx span { position: absolute; inset: 0; display: grid; place-items: center; font: 700 9.5px Consolas, monospace; color: #f2ebe4; }
+
+  .perm { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #4a4542; }
+  .perm-label { font-size: 11.5px; color: #ffe12e; font-weight: 600; word-break: break-all; }
+  .perm-note { margin-top: 3px; font-size: 11px; color: #a39b93; }
+  .perm-row { display: flex; gap: 6px; margin-top: 6px; }
+  .pbtn {
+    flex: 1; padding: 5px 0; border: 2px solid #000; border-radius: 0; cursor: pointer;
+    font: 700 11px Consolas, monospace; letter-spacing: 0.5px; color: #1f1e1d;
+    box-shadow: inset -2px -2px 0 rgba(0, 0, 0, 0.25), inset 2px 2px 0 rgba(255, 255, 255, 0.35);
+  }
+  .pbtn:active { box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.3); transform: translateY(1px); }
+  .pbtn.allow { background: #5fd38d; }
+  .pbtn.always { background: #5aa9e6; }
+  .pbtn.deny { background: #f06a5d; }
+  .pbtn:hover { filter: brightness(1.1); }
+
+  .perm-float {
+    position: fixed; min-width: 190px; max-width: 260px; box-sizing: border-box; padding: 6px 8px 7px;
+    background: #1f1e1d; border: 2px solid #ffe12e; box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
+    font: 11px/1.35 "Segoe UI", system-ui, sans-serif; color: #f2ebe4; cursor: default;
+  }
+  .perm-float .perm-row { margin-top: 5px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="perms"></div>
+<div id="card" class="card hidden">
+  <div class="top">
+    <span class="name"></span><span class="src"></span>
+    <div class="ctx empty"><svg viewBox="0 0 36 36"><circle class="bg" cx="18" cy="18" r="15"/><circle class="fg" cx="18" cy="18" r="15" stroke-dasharray="0 94.25"/></svg><span></span></div>
+  </div>
+  <div class="status"></div>
+  <div class="phase"></div>
+  <div class="thought"></div>
+  <div class="task"></div>
+  <div class="meta"></div>
+  <div class="queued empty"></div>
+  <div class="perm empty"></div>
+</div>
+<div id="ovcard" class="card ov hidden">
+  <div class="top"><span class="name">OVERLORD</span><span class="src">usage limits · buddies</span></div>
+  <div class="usage"></div>
+  <div class="err empty"></div>
+  <div class="blist"></div>
+  <div class="hint">Click for options</div>
+</div>
+<script src="sprites.js"></script>
+<script src="overlay.js"></script>
+</body>
+</html>

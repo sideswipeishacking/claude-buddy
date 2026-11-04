@@ -1,0 +1,5 @@
+#!/bin/sh
+# Refuses a commit that would publish personal data (home paths, emails, your
+# computer or account name, tokens) or that uses a non-noreply git identity.
+# Enable once per clone:  git config core.hooksPath .githooks
+exec node tools/privacy-check.js --staged
