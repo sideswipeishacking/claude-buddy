@@ -32,15 +32,18 @@ Inside Claude Code (any session):
 /plugin install claude-buddy@claude-buddy
 ```
 
-Then **start a new session** (hooks load when a session starts) and type:
+Then activate it in the session you're in and summon your buddy:
 
 ```
+/reload-plugins
 /claude-buddy:buddy
 ```
 
+A session loads its plugins when it starts, so sessions that were already open need `/reload-plugins` once (sessions you start later pick the plugin up by themselves). The same goes after updating the plugin.
+
 The first `/buddy` notices the desktop app isn't installed yet and installs it in the background: it copies the app to your user folder and downloads Electron (about 100 MB). That takes a minute or two. Claude Code shows a short message, and your buddy is built on the desktop as soon as the app is ready. You don't need to do anything else.
 
-Setup also adds a small personal command file so that plain **`/buddy`** works in every new session from then on.
+Setup also adds a small personal command file so that plain **`/buddy`** works from then on.
 
 > Prefer the menus? Run `/plugin`, choose **Add marketplace**, enter `sideswipeishacking/claude-buddy`, then install **claude-buddy** from the **Discover** tab.
 
@@ -100,7 +103,7 @@ Set `CLAUDE_BUDDY_HOME` to install the app somewhere else, and `CLAUDE_BUDDY_POR
 
 ## Updating
 
-- **Marketplace install:** run `/plugin marketplace update claude-buddy` (or turn on auto-update for the marketplace in `/plugin`). The next time a session starts, the plugin notices it's newer than the installed app and quietly updates the app.
+- **Marketplace install:** run `/plugin marketplace update claude-buddy` (or turn on auto-update for the marketplace in `/plugin`), then `/reload-plugins` in sessions that are already open. The next time a session starts, the plugin notices it's newer than the installed app and quietly updates the app.
 - **Terminal install:** run `npx github:sideswipeishacking/claude-buddy` again.
 - **Clone:** `git pull`, then `node bin/claude-buddy.js install`.
 

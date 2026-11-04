@@ -1,7 +1,7 @@
 {
   "name": "claude-buddy",
   "productName": "Claude Buddy",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Pixel desktop companions for your Claude Code sessions: one buddy per session, acting out what Claude is doing",
   "main": "app/main.js",
   "bin": { "claude-buddy": "bin/claude-buddy.js" },

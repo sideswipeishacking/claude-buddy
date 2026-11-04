@@ -175,7 +175,8 @@ async function install() {
   registerPlugin(dir);
   log(`
 \x1b[32mClaude Buddy is installed.\x1b[0m
-  1. Start a NEW Claude Code session (terminal, IDE extension or the Claude app).
+  1. Start a new Claude Code session (terminal, IDE extension or the Claude app),
+     or run /reload-plugins in one that's already open.
   2. Type  /buddy
   Your buddy gets built on your desktop. /buddy off sends it home. Click the eye in the top-left corner for everything else.
 `);

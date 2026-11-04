@@ -21,11 +21,17 @@ npx github:sideswipeishacking/claude-buddy doctor
 
 ## `/buddy` says "Unknown command"
 
-Right after a marketplace install, the command is `/claude-buddy:buddy`. Plain `/buddy` comes from a small personal command file that the first setup adds; it works in sessions started after that. If you removed it, run `npx github:sideswipeishacking/claude-buddy setup` to add it back.
+Right after a marketplace install, the command is `/claude-buddy:buddy`. Plain `/buddy` comes from a small personal command file that the first setup adds. If you removed it, run `npx github:sideswipeishacking/claude-buddy setup` to add it back.
 
 ## Claude answers `/buddy` instead of the plugin
 
-The plugin's hooks aren't active in this session. Hooks load when a session starts, so start a **new** session after installing or updating the plugin. Check that it's enabled with `/plugin` → *Installed*.
+Claude replying "the Claude Buddy plugin isn't active in this session" means the plugin's hooks haven't been loaded in this session. A session loads its plugins when it starts, so a session that was already open when you installed or updated the plugin doesn't have them yet. Run:
+
+```
+/reload-plugins
+```
+
+and then `/buddy` again (or start a new session). Check that the plugin is enabled with `/plugin` → *Installed*.
 
 ## Nothing appears after `/buddy`
 
@@ -52,7 +58,7 @@ Electron's installer still verifies the download against the official checksums.
 
 ## The buddy doesn't react to what Claude is doing
 
-- The session must have been **started after** the plugin was installed (hooks load at session start).
+- The session must have the plugin loaded: start it after installing the plugin, or run `/reload-plugins` in it.
 - Each session needs its own `/buddy`, unless you turned on *Buddy for every session* in Settings.
 - If another tool also uses port `47321`, set `CLAUDE_BUDDY_PORT` to something else, for both Claude Code and the app.
 

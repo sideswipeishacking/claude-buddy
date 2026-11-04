@@ -41,9 +41,10 @@ You need **Claude Code** and **[Node.js 18+](https://nodejs.org)** (the plugin's
 /plugin install claude-buddy@claude-buddy
 ```
 
-**2. Start a new session** (plugins load when a session starts) **and summon your buddy:**
+**2. Activate it and summon your buddy** (in a session that was already open, run `/reload-plugins` first; new sessions load it by themselves):
 
 ```
+/reload-plugins
 /claude-buddy:buddy
 ```
 

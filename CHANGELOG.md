@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.1
+
+- When a session doesn't have the plugin loaded yet (it was open when you installed or updated it), `/buddy` now tells you to run `/reload-plugins` instead of starting a new session. The install guide and troubleshooting say the same.
+
 ## 2.0.0
 
 The open-source release.

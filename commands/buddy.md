@@ -4,5 +4,5 @@ argument-hint: "[off | custom | helpers on|off | name <nickname> | hat <name> | 
 disable-model-invocation: true
 ---
 The Claude Buddy hook normally handles `/buddy` before it reaches you, so if you are reading this the hook did not run.
-Reply with one short sentence telling the user that the Claude Buddy plugin's hooks are not active in this session
-(they load when a session starts, so starting a new session usually fixes it) and do nothing else.
+Reply with one short sentence telling the user that the Claude Buddy plugin isn't active in this session yet, and that
+running `/reload-plugins` and then `/buddy` again fixes it (or starting a new session). Do nothing else.
