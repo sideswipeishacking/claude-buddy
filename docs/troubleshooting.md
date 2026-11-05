@@ -16,6 +16,7 @@ npx github:sideswipeishacking/claude-buddy doctor
 - [The Overlord can't show usage](#the-overlord-cant-show-usage)
 - [Linux: no buddies, or a black screen](#linux-no-buddies-or-a-black-screen)
 - [macOS: the buddy won't paste or type along](#macos-the-buddy-wont-paste-or-type-along)
+- [Windows: buddies or settings seem to reset](#windows-buddies-or-settings-seem-to-reset)
 - [Logs](#logs)
 - [Starting over](#starting-over)
 
@@ -93,6 +94,10 @@ The card shows the reason:
 ## macOS: the buddy won't paste or type along
 
 Open **System Settings → Privacy & Security** and allow Claude Buddy (it may be listed as *Electron*) under **Accessibility** (pasting) and **Input Monitoring** (type along). Then quit Claude Buddy from the menu-bar icon and start it again.
+
+## Windows: buddies or settings seem to reset
+
+Before 2.0.2, Claude Buddy started from a session of the **Microsoft Store version of the Claude app** ran inside that app's sandbox and saved into the sandbox's private copy of `AppData`, separate from the real one. Update to 2.0.2 or newer: it always starts outside the sandbox. To tidy up the old private copies, quit Claude Buddy and delete `Claude Buddy` and `ClaudeBuddy` under `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming` and `…\LocalCache\Local`. Your real buddies and settings aren't affected.
 
 ## Logs
 

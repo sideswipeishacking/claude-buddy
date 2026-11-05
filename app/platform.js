@@ -27,6 +27,8 @@ const base = {
   fileDialogs: none, pressOpen: () => false, pixel: () => null, windowPixels: none, setClipboardOwner: () => {}, postQuit: () => {},
 };
 const P = { ...base, ...impl, os: OS };
+// Callers pass a window from listAllAppWindows; the Windows module wants its raw handle.
+if (OS === 'win32') P.focus = (win) => !!win && impl.focus(win.handle || win);
 
 /** Walk up from a process (a Claude session) to the first ancestor that owns a window. */
 P.windowOwner = function windowOwner(pid, windows = P.listAllAppWindows(process.pid), tree = P.processTree()) {

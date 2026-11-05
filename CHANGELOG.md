@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.2
+
+- **Windows + the Store version of the Claude app:** everything a Claude app session starts runs inside the app's sandbox, which keeps a private copy of AppData. Claude Buddy started from there (a `/buddy` when the app wasn't running, or first-time setup) saved its buddies, settings and even parts of its install into that private copy, so they could seem to reset depending on how it was started. The app and its setup now always start outside the sandbox (through Windows' WMI), and the installer moves itself outside when it's run from inside it.
+- **Fixed:** clicking a buddy didn't bring its session to the front on Windows since 2.0.0.
+
 ## 2.0.1
 
 - When a session doesn't have the plugin loaded yet (it was open when you installed or updated it), `/buddy` now tells you to run `/reload-plugins` instead of starting a new session. The install guide and troubleshooting say the same.

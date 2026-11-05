@@ -7,7 +7,7 @@
       "name": "claude-buddy",
       "source": "./",
       "description": "Summon a pixel buddy for your Claude Code session with /buddy. It lives on your desktop and acts out what Claude is doing.",
-      "version": "2.0.1",
+      "version": "2.0.2",
       "category": "productivity"
     }
   ]

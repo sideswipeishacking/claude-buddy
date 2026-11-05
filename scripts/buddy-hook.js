@@ -17,8 +17,9 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
 const paths = require('../lib/paths');
+// Starts things outside the sandbox of the Store version of the Claude app (see lib/launch.js).
+const { launchDetached } = require('../lib/launch');
 
 const PORT = paths.PORT;
 const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || path.resolve(__dirname, '..');
@@ -82,8 +83,7 @@ function launchConfig() {
 function launchApp() {
   const cfg = launchConfig();
   if (!cfg) return false;
-  spawn(cfg.command, cfg.args || [], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
-  return true;
+  return launchDetached(cfg.command, cfg.args || [], { cwd: paths.installDir() });
 }
 
 const version = (dir) => { try { return JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).version || '0'; } catch { return '0'; } };
@@ -96,16 +96,10 @@ function setupInBackground(ev) {
   const lock = path.join(os.tmpdir(), 'claude-buddy-setup.lock');
   try { if (Date.now() - fs.statSync(lock).mtimeMs < 10 * 60e3) return true; } catch { /* no setup running */ }
   fs.writeFileSync(lock, String(process.pid));
-  const args = [setupScript, 'setup', '--quiet', '--from', PLUGIN_ROOT];
-  if (ev) {
-    const pending = path.join(os.tmpdir(), `claude-buddy-summon-${process.pid}.json`);
-    fs.writeFileSync(pending, JSON.stringify(ev));
-    args.push('--then-post', pending);
-  }
-  const child = spawn(process.execPath, args, { detached: true, stdio: 'ignore', windowsHide: true });
-  child.on('exit', () => fs.rmSync(lock, { force: true }));
-  child.unref();
-  return true;
+  const args = [setupScript, 'setup', '--quiet', '--outside', '--from', PLUGIN_ROOT];
+  // The summon rides along on the command line (a temp file could land in a sandbox's private copy).
+  if (ev) args.push('--then-post-b64', Buffer.from(JSON.stringify(ev)).toString('base64'));
+  return launchDetached(process.execPath, args, { cwd: PLUGIN_ROOT }); // the lock expires after 10 minutes
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

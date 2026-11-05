@@ -76,6 +76,8 @@ Data flows one way: **hook → HTTP → `Sessions` → `World` → overlay rende
 
 ## Gotchas
 
+- **The Store (MSIX) version of the Claude app sandboxes everything its sessions start, including your shell when Claude Code runs inside it.** Writes to `AppData` land in `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\{Local,Roaming}`, and reads see that private copy layered over the real folders. The processes have no package identity, so detect it by effect (`lib/launch.js` `inPackageSandbox()`). Always start the app or its setup with `launchDetached()` (WMI on Windows), and run the CLI's install/setup/uninstall/start outside (it re-launches itself with `--outside`). To see the real folders from inside, have a WMI-launched script write a listing into a non-AppData folder.
+
 - **Never commit personal data.** `tools/privacy-check.js` looks up this machine's home path, account name, hostname and global git identity at run time. Commits must use a GitHub noreply email (repo-local `git config user.email`). Never hard-code personal values in the checker.
 - In Git Bash on this project, quoted heredocs still mangle backslashes, so patch files containing `\n` or `\\` with the Edit tool.
 - Electron 45's main-process `clipboard` is the async web API (`readText()` returns a Promise). On Windows use `win32.saveClipboard` / `restoreClipboard` / `setClipboard`; those need an owner window (`setClipboardOwner`, set to an overlay) or Chromium apps paste nothing.

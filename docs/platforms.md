@@ -34,6 +34,8 @@ Everything is supported, including:
 
 Windows 10 and 11, with any display scaling and any number of monitors.
 
+**The Microsoft Store version of the Claude app** runs everything its sessions start inside a sandbox with a private copy of `AppData`. Claude Buddy always starts itself (and its setup) outside that sandbox through Windows' WMI service, so your buddies and settings are the same whether the app was started from a Claude app session, a terminal or at login.
+
 ## macOS
 
 > macOS support is new. If something looks off, please [open an issue](https://github.com/sideswipeishacking/claude-buddy/issues) with your macOS version.

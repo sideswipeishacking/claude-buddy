@@ -62,7 +62,7 @@ Claude Code session ──hook events──▶ scripts/buddy-hook.js ──HTTP 
 | `.claude-plugin/` | `plugin.json` and `marketplace.json`: this repo is both the plugin and its marketplace |
 | `hooks/hooks.json`, `scripts/buddy-hook.js`, `commands/buddy.md` | The Claude Code plugin |
 | `bin/claude-buddy.js` | Cross-platform installer / CLI (`install`, `setup`, `doctor`, …) |
-| `lib/` | Shared by the app, CLI and hook: install paths, start at login |
+| `lib/` | Shared by the app, CLI and hook: install paths, start at login, starting the app outside the Claude app's sandbox (`launch.js`) |
 | `app/main.js` | Electron main process |
 | `app/world.js`, `app/sessions.js` | Simulation and session state (no Electron, testable in Node) |
 | `app/sprites.js` | Sprite engine: poses, faces, hats, accessories, animations, the Overlord |

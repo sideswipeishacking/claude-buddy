@@ -33,6 +33,7 @@ So you're never surprised:
 - **Paste and press Enter** in a Claude Code session's prompt box: when you drop files on a buddy (no Enter), and once after a usage limit resets for sessions the limit interrupted (with Enter). It only does this after checking the right app is in front, and never in an IDE's built-in terminal panel.
 - **Answer a permission prompt**, only when you press Allow, Always or Deny on the buddy.
 - **Press "Open"** in a file dialog (Windows), after you clicked Open or pressed Enter there yourself.
+- **Start itself through Windows' process service (WMI)** on Windows, so it runs outside the Claude app's sandbox (see [platforms](platforms.md#windows)). If your security software blocks that, it starts directly instead.
 
 ## Open source
 

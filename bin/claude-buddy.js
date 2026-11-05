@@ -13,9 +13,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('http');
-const { spawn, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const paths = require('../lib/paths');
 const { setAutostart } = require('../lib/autostart');
+const { launchDetached, inPackageSandbox } = require('../lib/launch');
 
 const REPO = 'sideswipeishacking/claude-buddy';
 const MARKETPLACE = 'claude-buddy';
@@ -139,7 +140,7 @@ async function startApp() {
   if (await running()) return true;
   const launch = JSON.parse(fs.readFileSync(paths.launchFile(), 'utf8'));
   step('Starting Claude Buddy');
-  spawn(launch.command, launch.args || [], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  launchDetached(launch.command, launch.args || [], { cwd: paths.installDir() });
   for (let i = 0; i < 60; i++) { if (await running()) return true; await sleep(500); }
   log("  Claude Buddy didn't answer yet. Check setup.log and the app's error.log (see docs/troubleshooting.md).");
   return false;
@@ -234,12 +235,24 @@ async function doctor() {
 
 (async () => {
   const cmd = args.find((a) => !a.startsWith('--')) || 'install';
+  // Run from inside the Store version of the Claude app (e.g. Claude ran this for you), files written
+  // here would land in its private copy of AppData. Do the work outside it instead.
+  if (['install', 'setup', 'uninstall', 'start'].includes(cmd) && !flag('outside') && inPackageSandbox()) {
+    const rest = process.argv.slice(2).filter((a) => a !== '--quiet');
+    launchDetached(process.execPath, [__filename, ...rest, '--outside', '--quiet'], { cwd: SRC });
+    console.log(`This runs inside the Claude app's sandbox, so Claude Buddy continues outside it (in the background).\nProgress: ${path.join(paths.installDir(), 'setup.log')}`);
+    return;
+  }
   try {
     if (cmd === 'install') await install();
     else if (cmd === 'setup') {
       await setup({ from: opt('from') || SRC, start: !flag('no-start') });
-      const pending = opt('then-post');
+      // The summon that triggered the setup (from the hook): build that buddy now.
+      const b64 = opt('then-post-b64');
+      if (b64) await request('POST', '/event', JSON.parse(Buffer.from(b64, 'base64').toString('utf8')), 3000);
+      const pending = opt('then-post'); // (plugins up to 2.0.1)
       if (pending) { try { await request('POST', '/event', JSON.parse(fs.readFileSync(pending, 'utf8')), 3000); } finally { fs.rmSync(pending, { force: true }); } }
+      fs.rmSync(path.join(os.tmpdir(), 'claude-buddy-setup.lock'), { force: true });
     } else if (cmd === 'uninstall') await uninstall();
     else if (cmd === 'start') { if (!(await startApp())) process.exitCode = 1; }
     else if (cmd === 'stop') await request('POST', '/quit');
