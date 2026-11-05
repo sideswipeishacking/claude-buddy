@@ -693,6 +693,7 @@ function toggleTower(open) {
 
 /** Buttons on the Overlord's hover panel. */
 ipcMain.on('ov-action', (e, { act, value } = {}) => {
+  traceInput('ov-action', { act, value });
   world.ovKeep(3000);
   const live = [...world.buddies.values()].filter((b) => !b.leaving && !['ride', 'enter', 'hell', 'doom'].includes(b.mode));
   if (act === 'gather') { if (live.length) startPlacing(live.map((b) => b.id)); }
@@ -714,6 +715,7 @@ ipcMain.on('ov-action', (e, { act, value } = {}) => {
 
 /** Clicks on the skyscraper: the collapse button, a floor's light switch, or its window (decorate the room). */
 ipcMain.on('tower', (e, { act, id } = {}) => {
+  traceInput('tower', { act, id: id && String(id).slice(0, 8) });
   if (act === 'toggle') return toggleTower();
   if (act === 'switch' && id) {
     const b = world.get(id);
@@ -751,13 +753,53 @@ function buddyItems(b, point) {
   ];
 }
 
+let menuOpen = false; // a buddy's right-click menu is up (clicks on it aren't the overlay's)
 function showBuddyMenu(id, overlay) {
   const b = world.get(id);
   if (!b) return;
   const point = screen.getCursorScreenPoint();
   const menu = Menu.buildFromTemplate([{ label: `${b.session.displayName}  ·  ${b.session.card().status}`, enabled: false }, { type: 'separator' }, ...buddyItems(b, point)]);
-  menu.popup(overlay && !overlay.win.isDestroyed() ? { window: overlay.win } : {});
+  menuOpen = true;
+  menu.popup({ ...(overlay && !overlay.win.isDestroyed() ? { window: overlay.win } : {}), callback: () => { setTimeout(() => { menuOpen = false; }, 300); } });
 }
+
+// ---------------------------------------------------------------- unsticking an overlay
+// If an overlay ever misses a left button release, Chromium thinks the button is still down and
+// ignores every later left press (right-clicks and hover keep working). We notice a real press
+// over one of our things that the overlay never reports, and reset it: first by releasing the
+// button inside it, and if that didn't help, by rebuilding the overlay window.
+let pendingPress = null;
+let lastUnstick = 0;
+let lastRebuild = 0;
+function ourWindowAt(p) {
+  return BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w.isVisible() && ![...overlays.values()].some((o) => o.win === w) && (() => {
+    const r = w.getBounds();
+    return p.x >= r.x && p.x < r.x + r.width && p.y >= r.y && p.y < r.y + r.height;
+  })());
+}
+function unstickOverlay(o, p) {
+  if (o.win.isDestroyed()) return;
+  // Released the button already and it's still ignoring presses: rebuild it (at most every 2 minutes,
+  // in case something outside the app is what swallows the clicks).
+  const again = Date.now() - lastUnstick < 20e3 && Date.now() - lastRebuild > 120e3;
+  lastUnstick = Date.now();
+  if (again) lastRebuild = Date.now();
+  traceInput('unstick', { display: o.display.id, rebuild: again });
+  logError(new Error(again ? 'overlay still ignored a left press: rebuilt it' : 'overlay ignored a left press: released the button inside it'), 'input');
+  if (again) {
+    o.win.destroy();
+    overlays.delete(o.display.id);
+    rebuildOverlays();
+    return;
+  }
+  const lx = Math.round(p.x - o.display.bounds.x), ly = Math.round(p.y - o.display.bounds.y);
+  o.win.webContents.sendInputEvent({ type: 'mouseUp', x: lx, y: ly, button: 'left', clickCount: 1 });
+}
+ipcMain.on('press', (e) => {
+  const o = overlayFor(e.sender);
+  if (o) o.lastPress = Date.now();
+  if (pendingPress && pendingPress.o === o) pendingPress = null;
+});
 
 function settingsItems() {
   return [
@@ -898,8 +940,11 @@ function createOverlay(display) {
 /** An overlay takes the mouse only while something of ours is under it (or you're placing a marker). */
 function applyCapture(o) {
   if (o.win.isDestroyed()) return;
-  const on = !!(o.caps.hover || o.caps.drop || placing);
-  if (on !== o.captureOn) { o.captureOn = on; o.win.setIgnoreMouseEvents(!on, { forward: true }); }
+  let on = !!(o.caps.hover || o.caps.drop || placing);
+  // Never turn click-through in the middle of a click: the overlay would miss the button's release
+  // and from then on ignore left presses. Let go once the button is up (the tick re-applies this).
+  if (!on && o.captureOn && platform.mouseDown()) on = true;
+  if (on !== o.captureOn) { o.captureOn = on; o.win.setIgnoreMouseEvents(!on, { forward: true }); traceInput('capture', { display: o.display.id, on, hover: o.caps.hover, drop: o.caps.drop, placing: !!placing }); }
 }
 
 function rebuildOverlays() {
@@ -916,6 +961,13 @@ function rebuildOverlays() {
   world.setDisplays(displays.map((d) => ({ id: d.id, bounds: d.bounds, workArea: d.workArea, internal: !!d.internal, primary: d.id === primary })));
 }
 
+// Debug: what reached the main process from the overlays, and when capture flipped (read by /debug/overlay).
+const inputTrace = [];
+function traceInput(what, data = {}) {
+  inputTrace.push({ t: new Date().toISOString().slice(11, 23), what, ...data });
+  if (inputTrace.length > 80) inputTrace.shift();
+}
+
 function overlayFor(sender) {
   for (const o of overlays.values()) if (o.win.webContents === sender) return o;
   return null;
@@ -923,13 +975,18 @@ function overlayFor(sender) {
 
 ipcMain.on('hover', (e, id) => {
   const o = overlayFor(e.sender);
+  traceInput('hover', { id: id ? String(id).slice(0, 14) : null });
   if (o) { o.caps.hover = !!id; applyCapture(o); }
   world.ov.hovered = id === 'overlord';
   if (id === 'overlord') world.ovKeep(2500);
   world.setHover(id && id !== 'overlord' && id !== 'dialog' && !String(id).startsWith('tower') ? id : null);
 });
-ipcMain.on('grab', (e, id) => world.grab(id));
-ipcMain.on('release', () => world.release());
+ipcMain.on('grab', (e, id) => {
+  world.grab(id);
+  const b = world.get(id);
+  traceInput('grab', { id: String(id).slice(0, 8), mode: b && b.mode });
+});
+ipcMain.on('release', () => { traceInput('release'); world.release(); });
 ipcMain.on('context', (e, id) => (id === 'overlord' ? null : showBuddyMenu(id, overlayFor(e.sender))));
 ipcMain.on('dialog-open-click', () => interceptOpen('click'));
 ipcMain.on('drag-over', (e, id) => { const b = world.get(id); if (b) b.dragHint = Date.now(); });
@@ -980,6 +1037,15 @@ function tick() {
 
   const anyHeld = [...world.buddies.values()].some((b) => b.mode === 'held');
   const down = platform.mouseDown();
+  if (down && !tick.wasDown) {
+    const o = overlayAt(c.x, c.y);
+    traceInput('os-down', { x: c.x, y: c.y, captureOn: o ? o.captureOn : null, hover: o ? o.caps.hover : null });
+    // A left press on one of our things (the overlay has the mouse): the overlay should report it.
+    // (The overlay's report can arrive before this 16 ms poll notices the press, hence lastPress.)
+    if (o && o.ready && o.captureOn && o.caps.hover && !menuOpen && !(o.lastPress && now - o.lastPress < 400) && !ourWindowAt(c)) pendingPress = { o, at: now, x: c.x, y: c.y };
+  }
+  tick.wasDown = !!down;
+  if (pendingPress && now - pendingPress.at > 300) { const P = pendingPress; pendingPress = null; unstickOverlay(P.o, P); }
   try { world.tick(now, dt, { x: c.x, y: c.y, speed: cursorSpeed }, anyHeld ? down : null); } catch (err) { logError(err, 'world'); }
 
   // Dragging files from Explorer: make the buddy under the pointer a drop target.
@@ -1129,6 +1195,30 @@ function startServer() {
         }));
         return reply(200, { files: files.concat(shots) });
       }
+      if (req.method === 'GET' && url.pathname === '/debug/overlay') {
+        // How the overlays see the mouse: capture state, hover, and their recent mouse events.
+        const list = await Promise.all([...overlays.values()].map(async (o) => ({
+          display: o.display.id, bounds: o.display.bounds, ready: o.ready, captureOn: o.captureOn, caps: o.caps,
+          page: o.ready ? await o.win.webContents.executeJavaScript('window.__buddyDebug ? window.__buddyDebug() : null').catch((err) => String(err)) : null,
+        })));
+        return reply(200, { placing: !!placing, overlays: list, trace: inputTrace });
+      }
+      if (req.method === 'POST' && url.pathname === '/debug/click') {
+        // Inject a mouse click straight into the overlay under (x, y) in DIPs (no real mouse involved).
+        const x = Number(url.searchParams.get('x')), y = Number(url.searchParams.get('y'));
+        const button = url.searchParams.get('button') === 'right' ? 'right' : 'left';
+        const o = overlayAt(x, y);
+        if (!o) return reply(404, { error: 'no overlay there' });
+        const lx = Math.round(x - o.display.bounds.x), ly = Math.round(y - o.display.bounds.y), wc = o.win.webContents;
+        const step = url.searchParams.get('step'); // down | up | (both)
+        wc.sendInputEvent({ type: 'mouseMove', x: lx, y: ly });
+        await new Promise((r) => setTimeout(r, 120));
+        if (step === 'move') return reply(200, { ok: true, x: lx, y: ly });
+        if (step !== 'up') wc.sendInputEvent({ type: 'mouseDown', x: lx, y: ly, button, clickCount: 1 });
+        if (!step) await new Promise((r) => setTimeout(r, 80));
+        if (step !== 'down') wc.sendInputEvent({ type: 'mouseUp', x: lx, y: ly, button, clickCount: 1 });
+        return reply(200, { ok: true, display: o.display.id, x: lx, y: ly });
+      }
       if (req.method === 'POST' && url.pathname === '/debug/hover') {
         // Show a hover card without moving the mouse (for screenshots): ?id=<session>|overlord, ?id= closes it.
         const id = url.searchParams.has('id') ? url.searchParams.get('id') || null : [...world.buddies.keys()][0] || null;
@@ -1142,6 +1232,7 @@ function startServer() {
         const b = world.get(url.searchParams.get('id')) || [...world.buddies.values()][0];
         const act = url.searchParams.get('do');
         if (act === 'detach') { world.ovDetach(); return reply(200, { ok: true }); }
+        if (act === 'unstick') { const o = [...overlays.values()][0]; if (o) unstickOverlay(o, screen.getCursorScreenPoint()); return reply(200, { ok: !!o }); }
         if (act === 'tower') { toggleTower(url.searchParams.has('open') ? url.searchParams.get('open') === '1' : undefined); return reply(200, { open: world.tower.open }); }
         if (act === 'on') { turnOn(url.searchParams.get('id')); return reply(200, { ok: true }); }
         if (act === 'usage') { await fetchUsage(); return reply(200, { at: usage.at, ok: !!usage.data, error: usage.error }); }

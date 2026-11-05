@@ -1,6 +1,6 @@
 {
   "name": "claude-buddy",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Summon a pixel buddy for your Claude Code session with /buddy. It lives on your desktop and acts out what Claude is doing.",
   "author": { "name": "sideswipeishacking", "url": "https://github.com/sideswipeishacking" },
   "homepage": "https://github.com/sideswipeishacking/claude-buddy",

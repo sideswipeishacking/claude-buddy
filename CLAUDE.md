@@ -36,6 +36,8 @@ claude plugin validate .                    # validate marketplace.json (and .cl
 - `POST /debug/demo` starts a demo session.
 - `POST /debug/hover?id=<session>|overlord` opens a hover card.
 - `POST /debug/forget?id=` removes a buddy and its registry entry.
+- `GET /debug/overlay` shows each overlay's mouse capture, hover, its last mouse events, and a main-process trace (hover/capture/grab/release/tower/ov-action, every real left press as `os-down`, and any `unstick`).
+- `POST /debug/click?x=&y=[&button=right][&step=move|down|up]` injects mouse input straight into the overlay under a point (DIPs), without the real mouse.
 - `POST /debug/act?do=…` triggers behaviours. `do=limit&secs=N&id=<session>` plays the usage-limit show and never sends a real prompt.
 - Logs and `state.json` are in Electron's userData (`%APPDATA%\Claude Buddy`, `~/Library/Application Support/Claude Buddy`, `~/.config/Claude Buddy`). `error.log` writes the same message at most once a minute; `events.log` has hook timing only. The install dir has `setup.log`.
 
@@ -85,6 +87,7 @@ Data flows one way: **hook → HTTP → `Sessions` → `World` → overlay rende
 - In Git Bash on this project, quoted heredocs still mangle backslashes, so patch files containing `\n` or `\\` with the Edit tool.
 - Electron 45's main-process `clipboard` is the async web API (`readText()` returns a Promise). On Windows use `win32.saveClipboard` / `restoreClipboard` / `setClipboard`; those need an owner window (`setClipboardOwner`, set to an overlay) or Chromium apps paste nothing.
 - `uprightFrom()` converts a wall/ceiling position to feet and sets mode `air`. Measure with `centre(b)` first, since `centre()` needs the wall/ceiling object.
+- Overlay clicks must not change capture or open windows while the left button is down: skyscraper parts and the dialog's Open act on `click` (after release), and `applyCapture()` keeps capture until the button is up. As a safety net, a real left press over our things that the overlay never acknowledges (`press` IPC) gets `unstickOverlay()`: release the button inside it, then rebuild the overlay.
 - The Overlord has no menu any more: its hover panel (`#ovcard` in overlay.html) sends `ov-action`. Skyscraper clicks send `tower` {act: toggle | switch | room}.
 - Quitting from the panel/tray (`quitApp()`) or `claude-buddy stop` (`/quit?home=1`) sends everyone home. A plain `/quit` (what install/setup use to restart) keeps buddies active so they're restored.
 - The usage-limit `RESUME_PROMPT` must only go to sessions recorded as interrupted (`StopFailure` rate_limit during or shortly before the confirmed limit).

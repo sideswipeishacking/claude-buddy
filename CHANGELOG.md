@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.1
+
+- **Fixed:** buddies, the Overlord's panel and the skyscraper could stop taking left-clicks (right-clicks and hovering still worked) until Claude Buddy was restarted. Skyscraper buttons now act when you let go of the mouse rather than when you press it, the overlay never turns click-through in the middle of a click, and if an overlay ever stops seeing left presses anyway, Claude Buddy notices and resets it on its own (the event is noted in `error.log`).
+
 ## 2.1.0
 
 - **The skyscraper.** Every buddy has a floor in a little tower at the bottom-left of the main screen: lit while it's home, dark while it's out. A switch on each floor turns that buddy on or sends it home, and it takes the glass elevator either way. The tower sinks into the ground when you don't need it (click its roof to bring it up). Click a window to decorate the room.

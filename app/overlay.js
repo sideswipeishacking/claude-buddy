@@ -1263,6 +1263,20 @@ function endGrab(e) {
   if (e && e.clientX !== undefined) updateHover(e.clientX, e.clientY);
 }
 
+// Debug: the last mouse events as this overlay saw them (read by /debug/overlay).
+const inputLog = [];
+function logInput(e) {
+  const t = e.target, tag = t && (t.id || (typeof t.className === 'string' && t.className) || t.tagName);
+  inputLog.push({ t: Math.round(performance.now()), type: e.type, button: e.button, x: Math.round(e.clientX), y: Math.round(e.clientY), target: String(tag || ''), at: whatsAt(e.clientX, e.clientY), hover: hoverId, grabbing, placing });
+  if (inputLog.length > 40) inputLog.shift();
+}
+for (const type of ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'click', 'contextmenu']) window.addEventListener(type, logInput, true);
+window.__buddyDebug = () => ({
+  hoverId, grabbing, placing, cardFor, lastMouse, inputLog,
+  buttons: ovcard.classList.contains('hidden') ? [] : [...ovcard.querySelectorAll('.ovbtn')].map((b) => { const r = b.getBoundingClientRect(); return { act: b.dataset.act, value: b.dataset.value, x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }),
+  tower: tower && towerGeo(tower) ? (() => { const g = towerGeo(tower); return { button: g.button, n: g.n, h: tower.h }; })() : null,
+});
+
 window.addEventListener('mousemove', (e) => {
   lastRealMouse = performance.now();
   lastMouse = { x: e.clientX, y: e.clientY };
@@ -1270,6 +1284,17 @@ window.addEventListener('mousemove', (e) => {
 });
 window.addEventListener('mouseleave', () => { lastMouse = null; if (!grabbing) { clearTimeout(leaveTimer); leaveTimer = null; setHover(null); } });
 window.addEventListener('click', (e) => {
+  // The skyscraper and the file dialog's Open button act on the finished click (button released),
+  // never on the press: whatever they open or change must not take the mouse away mid-click.
+  if (e.button === 0 && pressedOn && (pressedOn === 'dialog' || pressedOn.startsWith('tower:'))) {
+    const id = whatsAt(e.clientX, e.clientY), was = pressedOn;
+    pressedOn = null;
+    if (id !== was) return; // pressed on one thing, let go over another: no click
+    if (id === 'dialog') { buddy.send('dialog-open-click'); return; }
+    const [, act, bid] = id.split(':');
+    buddy.send('tower', { act, id: bid });
+    return;
+  }
   const btn = e.target.closest && e.target.closest('.pbtn');
   if (btn) { buddy.send('decide', { id: btn.dataset.id, decision: btn.dataset.decision }); return; }
   const ob = e.target.closest && e.target.closest('.ovbtn');
@@ -1281,7 +1306,10 @@ window.addEventListener('contextmenu', (e) => {
   const id = whatsAt(e.clientX, e.clientY) || (onUi(e) ? hoverId : null);
   if (isBuddyId(id)) buddy.send('context', id); // the Overlord and the skyscraper have no menus: hover / click them
 });
+let pressedOn = null; // the skyscraper part or dialog button a left press started on
 window.addEventListener('pointerdown', (e) => {
+  if (e.button === 0) buddy.send('press'); // tells main this overlay is receiving left presses (see unstick in main.js)
+  pressedOn = null;
   if (placing) {
     if (e.button === 0) buddy.send('place', { x: e.clientX + origin.x, y: e.clientY + origin.y });
     else buddy.send('place-cancel');
@@ -1292,12 +1320,7 @@ window.addEventListener('pointerdown', (e) => {
   const id = whatsAt(e.clientX, e.clientY);
   if (!id) return;
   if (id === 'overlord') return; // its options are on its hover panel
-  if (id === 'dialog') { buddy.send('dialog-open-click'); return; }
-  if (id.startsWith('tower')) {
-    const [, act, bid] = id.split(':');
-    if (act) buddy.send('tower', { act, id: bid });
-    return;
-  }
+  if (id === 'dialog' || id.startsWith('tower')) { pressedOn = id; return; } // acted on in 'click'
   grabbing = true;
   grabAt = performance.now();
   grabPointer = e.pointerId;
