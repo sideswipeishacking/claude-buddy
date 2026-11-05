@@ -1,10 +1,10 @@
 // Narrow bridge between the overlay/gallery/workshop pages and the main process.
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
-const IN = new Set(['init', 'frame', 'sound', 'debugHover']);
+const IN = new Set(['init', 'init-tab', 'frame', 'sound', 'debugHover']);
 const OUT = new Set([
   'hover', 'grab', 'release', 'context', 'decide', 'look-preview', 'look-save', 'win-close',
-  'overlord-click', 'files-dropped', 'drag-over', 'dialog-open-click', 'place', 'place-cancel',
+  'ov-action', 'tower', 'buddy-forget', 'files-dropped', 'drag-over', 'dialog-open-click', 'place', 'place-cancel',
 ]);
 
 contextBridge.exposeInMainWorld('buddy', {

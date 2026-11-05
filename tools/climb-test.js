@@ -41,6 +41,7 @@ function onFloor(id, x, y) {
   const b = world.add(session(id), { look: { hat: 'crown' }, x, birth: false });
   b.spawned = false;
   b.fallKind = 'nap';
+  b.greetAt = Infinity; // no wandering off to chat with the others mid-check
   run(b, 3000, (q) => q.mode === 'auto');
   b.queue = []; b.react = null; b.y = y;
   return b;

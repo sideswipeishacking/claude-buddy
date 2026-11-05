@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.1.0
+
+- **The skyscraper.** Every buddy has a floor in a little tower at the bottom-left of the main screen: lit while it's home, dark while it's out. A switch on each floor turns that buddy on or sends it home, and it takes the glass elevator either way. The tower sinks into the ground when you don't need it (click its roof to bring it up). Click a window to decorate the room.
+- **Printing is for new buddies only.** Buddies you've met before come out of the skyscraper instead of being built again, and walk back home when you send them off, when their session ends, or when you quit.
+- **The Overlord's panel.** Hovering the Overlord now shows its options (gather, wake everyone, the skyscraper, demo, gallery, settings, sizes, quit) next to your usage. Clicking it does nothing any more, and its menu is gone.
+- **A life between jobs.** Idle buddies look each other up much more often, even across screens, and have little conversations in speech bubbles.
+- **Shake to wake** a napping buddy (or use the new **Wake up** menu item / *Wake everyone*). Don't shake too hard.
+- **Wardrobe:** 18 new hats, 22 new accessories and 5 new colours.
+- **Fixed:** feeding files through the Open dialog stopped working in the Claude app and IDEs.
+- **Fixed:** a game of fetch ended as soon as you picked the buddy up; it now goes after the ball until it has it.
+- **Fixed:** at large sizes the Overlord clipped into the side of the screen; it now keeps its distance at any size.
+- **Fixed:** the first *Customize…* after starting could open nothing (or open behind the buddies).
+- **Fixed:** the welcome sign after a buddy is built stopped before it was finished.
+- **Fixed:** after restarting the app, a buddy turned back on wasn't reconnected to its session (no typing along, clicks didn't find the window) until you ran `/buddy` again.
+- **Fixed:** clicking a buddy from an IDE didn't open that project's folder in the IDE the way it does for the Claude app.
+
 ## 2.0.2
 
 - **Windows + the Store version of the Claude app:** everything a Claude app session starts runs inside the app's sandbox, which keeps a private copy of AppData. Claude Buddy started from there (a `/buddy` when the app wasn't running, or first-time setup) saved its buddies, settings and even parts of its install into that private copy, so they could seem to reset depending on how it was started. The app and its setup now always start outside the sandbox (through Windows' WMI), and the installer moves itself outside when it's run from inside it.

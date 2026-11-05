@@ -39,7 +39,8 @@ and then `/buddy` again (or start a new session). Check that the plugin is enabl
 - **First time?** Setup downloads about 100 MB in the background and builds your buddy when it's done. Give it a minute or two. Progress is written to `setup.log` in the [install folder](installation.md#where-things-are-installed).
 - **Is the app running?** `npx github:sideswipeishacking/claude-buddy status`. Start it with `… start`, or from the Start menu / app launcher.
 - **Is Node.js on the PATH Claude Code sees?** The hooks run `node`. If you installed Node after starting your terminal, IDE or the Claude app, restart it.
-- **Hidden?** Check *Hide buddies* in the Overlord's Settings or the tray menu, and whether a fullscreen app is running on that screen.
+- **Hidden?** Check *Hide buddies* in the Overlord's panel or the tray menu, and whether a fullscreen app is running on that screen.
+- **Gone home?** If its window in the skyscraper is lit, it's home: flip its switch (or `/buddy`) to bring it out. Quitting Claude Buddy sends everyone home.
 
 ## Electron won't download
 

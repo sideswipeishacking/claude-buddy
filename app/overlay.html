@@ -33,7 +33,7 @@
   .card .empty { display: none; }
 
   /* The Overlord's card: usage limits and the buddy roster. */
-  .card.ov { width: 320px; border-color: #3fd0ff; box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35), 0 0 18px rgba(63, 208, 255, 0.25); cursor: pointer; }
+  .card.ov { width: 320px; border-color: #3fd0ff; box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35), 0 0 18px rgba(63, 208, 255, 0.25); }
   .card.ov .name { color: #9eeaff; letter-spacing: 2px; }
   .urow { margin-top: 8px; }
   .uhead { display: flex; justify-content: space-between; font-size: 11.5px; color: #e6ddd5; }
@@ -42,16 +42,30 @@
   .ubar i { display: block; height: 100%; }
   .usub { margin-top: 2px; font-size: 10.5px; color: #8d857e; }
   .err { margin-top: 6px; font-size: 11px; color: #f06a5d; }
-  .blist { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #4a4542; }
-  .bhead { font: 700 11px Consolas, monospace; color: #9eeaff; letter-spacing: 0.5px; margin-bottom: 4px; }
-  .brow { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 11.5px; }
-  .brow .dot { width: 7px; height: 7px; flex: none; background: #5a5450; }
-  .brow.on .dot { background: #5fd38d; box-shadow: 0 0 6px #5fd38d; }
-  .brow .sw { width: 9px; height: 9px; flex: none; border: 1px solid #000; }
-  .brow .bn { font: 700 11.5px Consolas, monospace; color: #f0a07f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
-  .brow.off .bn { color: #8d857e; }
-  .brow .bs { margin-left: auto; color: #a39b93; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
   .hint { margin-top: 8px; font-size: 10.5px; color: #3fd0ff; }
+  .ovsum { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #4a4542; font: 700 11px Consolas, monospace; color: #9eeaff; letter-spacing: 0.5px; }
+  .ovh { margin: 9px 0 4px; font: 700 10.5px Consolas, monospace; color: #8d857e; letter-spacing: 1.5px; }
+  .ovacts { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  .ovsets { display: flex; flex-direction: column; gap: 3px; }
+  .ovbtn {
+    display: flex; align-items: center; gap: 7px; padding: 5px 7px; text-align: left; cursor: pointer;
+    background: #2b2a33; color: #e6ddd5; border: 2px solid #000; border-radius: 0;
+    font: 11px "Segoe UI", system-ui, sans-serif; box-shadow: inset -2px -2px 0 rgba(0, 0, 0, 0.3), inset 2px 2px 0 rgba(255, 255, 255, 0.06);
+  }
+  .ovbtn:hover:not(:disabled) { border-color: #3fd0ff; color: #fff; }
+  .ovbtn:active:not(:disabled) { transform: translateY(1px); }
+  .ovbtn:disabled { opacity: 0.4; cursor: default; }
+  .ovsets .ovbtn { background: transparent; box-shadow: none; border-color: transparent; padding: 3px 4px; }
+  .ovsets .ovbtn:hover { border-color: #3a3633; }
+  .ovbtn i { width: 12px; height: 12px; flex: none; border: 2px solid #000; background: #3a3633; }
+  .ovbtn.on i { background: #5fd38d; box-shadow: 0 0 6px rgba(95, 211, 141, 0.6); }
+  .ovsizes { margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }
+  .ovsize { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #e6ddd5; }
+  .ovsize span { flex: 1; }
+  .ovsize b { width: 22px; text-align: center; font: 700 12px Consolas, monospace; color: #fff; }
+  .ovbtn.step { width: 26px; justify-content: center; padding: 2px 0; font: 700 13px Consolas, monospace; }
+  .ovbtn.quit { margin-top: 10px; width: 100%; justify-content: center; background: #3a1f1f; color: #f6c1bb; }
+  .ovbtn.quit:hover { border-color: #f06a5d; }
 
   .ctx { position: relative; width: 34px; height: 34px; flex: none; }
   .ctx svg { width: 34px; height: 34px; transform: rotate(-90deg); }
@@ -100,11 +114,16 @@
   <div class="perm empty"></div>
 </div>
 <div id="ovcard" class="card ov hidden">
-  <div class="top"><span class="name">OVERLORD</span><span class="src">usage limits · buddies</span></div>
+  <div class="top"><span class="name">OVERLORD</span><span class="src">usage · options</span></div>
   <div class="usage"></div>
   <div class="err empty"></div>
-  <div class="blist"></div>
-  <div class="hint">Click for options</div>
+  <div class="ovsum"></div>
+  <div class="ovh">ACTIONS</div>
+  <div class="ovacts"></div>
+  <div class="ovh">SETTINGS</div>
+  <div class="ovsets"></div>
+  <div class="ovsizes"></div>
+  <button class="ovbtn quit" data-act="quit">Quit Claude Buddy (everyone goes home)</button>
 </div>
 <script src="sprites.js"></script>
 <script src="overlay.js"></script>

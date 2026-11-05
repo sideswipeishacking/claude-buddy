@@ -76,9 +76,10 @@ Claude Code session ──hook events──▶ scripts/buddy-hook.js ──HTTP 
 There's no test framework. Each tool is a script that prints `PASS`/`FAIL` lines and exits non-zero on failure:
 
 ```bash
-npm test                          # features-test + climb-test
+npm test                          # features-test + climb-test + life-test
 node tools/features-test.js       # the build, Overlord, alerts, helpers, files, dialogs, stay put, usage limit, fullscreen
 node tools/climb-test.js          # walls/ceilings, monitor crossing, per-display sizes, landings
+node tools/life-test.js           # fetch, shaking, friends chatting, the skyscraper (walking home, elevator, lights)
 node tools/headless-test.js       # two simulated sessions, prints a behaviour trace
 node tools/dialog-test.js [--icons] [--app <dir>]               # Windows: opens a REAL Open dialog for a few seconds
 node_modules/electron/dist/electron.exe tools/paste-test.js     # what a Chromium text box receives from the buddy's paste
@@ -106,6 +107,8 @@ To test on Linux without a desktop, run with `CLAUDE_BUDDY_OZONE=headless`: Elec
 ## Adding hats, accessories and animations
 
 - Hats live in `HATS` / `HAT_ORDER` in `app/sprites.js`, as small pixel grids with a palette. Accessories are in `ACCESSORIES` (hand, face, neck, back).
+- The skyscraper's layout is `TOWER` (art pixels) and room decor is `ROOM` (walls, curtains, furniture, sill) in `app/sprites.js`; `roomPixels()` draws a room. `World` owns the tower state (`tower`, `goHome`, `leaveHome`, the elevator rides) and `overlay.js` draws it (`drawTower`).
+- Conversation lines are in `pickScene()` in `app/world.js`. They're drawn in the 3x5 pixel font (`FONT` in `sprites.js`), so they have to stay upper-case and short.
 - Animations are entries in `ANIMS` (a pose or procedural map, a face, fps, frame count and `fx` effects). `ACTIVITY_ANIMS` maps what Claude is doing to sets of animations.
 - `node tools/preview.js out.png [hat]` renders every animation into a contact sheet; the Animation gallery in the app shows them live.
 - `tools/build-sprites.py` regenerates `app/assets/poses.json` from an SVG pose pack.

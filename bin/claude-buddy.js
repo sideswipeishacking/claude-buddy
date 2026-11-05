@@ -179,7 +179,7 @@ async function install() {
   1. Start a new Claude Code session (terminal, IDE extension or the Claude app),
      or run /reload-plugins in one that's already open.
   2. Type  /buddy
-  Your buddy gets built on your desktop. /buddy off sends it home. Click the eye in the top-left corner for everything else.
+  Your buddy gets built on your desktop. /buddy off sends it home to its skyscraper. Hover the eye in the top-left corner for everything else.
 `);
 }
 
@@ -255,7 +255,7 @@ async function doctor() {
       fs.rmSync(path.join(os.tmpdir(), 'claude-buddy-setup.lock'), { force: true });
     } else if (cmd === 'uninstall') await uninstall();
     else if (cmd === 'start') { if (!(await startApp())) process.exitCode = 1; }
-    else if (cmd === 'stop') await request('POST', '/quit');
+    else if (cmd === 'stop') await request('POST', '/quit?home=1');
     else if (cmd === 'status') await status();
     else if (cmd === 'doctor') await doctor();
     else { console.log('Usage: claude-buddy [install|setup|start|stop|status|doctor|uninstall [--purge]]'); process.exitCode = 1; }

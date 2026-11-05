@@ -11,7 +11,7 @@ Claude Buddy is an Electron desktop app for Windows, macOS and Linux. Pixel budd
 ```bash
 npm install
 npm start                                   # run the app from this folder
-npm test                                    # tools/features-test.js + tools/climb-test.js
+npm test                                    # tools/features-test.js + climb-test.js + life-test.js
 node tools/headless-test.js                 # behaviour trace for two simulated sessions
 node tools/privacy-check.js                 # personal-data scan; must pass before any commit (pre-commit hook in .githooks)
 node bin/claude-buddy.js install            # copy to the install dir, npm install, register the plugin (local marketplace)
@@ -57,9 +57,12 @@ Data flows one way: **hook → HTTP → `Sessions` → `World` → overlay rende
   - `auto`, `air`, `held`, `float`: the feet;
   - `wall`, `ceil`: on a surface;
   - `birth`, `script`, `doom`: animation-driven;
+  - `enter`, `ride`: walking into the skyscraper / riding its elevator out (not drawn, not clickable);
   - `hell`: banished and hidden.
 
   `think()` is a priority list: hide → limit panic → reaction queue → drag hint → typing → task → hover → work/idle. `world.ov` is the Overlord and `world.doom` the usage-limit state machine. `tick()` isolates each buddy in try/catch and calls `recover()`.
+  - `world.tower` is the skyscraper (bottom-left of the primary display): `goHome()` gives a buddy a `home` task, it walks in (`mode 'enter'`), leaves `world.buddies` and rides the elevator up; `leaveHome()` adds a buddy in `mode 'ride'` that appears at the door after the ride down. main.js feeds it the residents (`updateResidents()`, from the registry). Only brand-new buddies are built (printed); known ones come out of the tower.
+  - Fetch and home tasks survive grabs, file feeding and `recover()` (`keepErrand`). Idle buddies meet up (`b.meet`, `findFriend`, `meetTick`) and play a scene from `pickScene()` with `say:` lines in speech bubbles.
 - **`app/main.js`** is the Electron main process: store and registry, the HTTP server and the 60 Hz tick, per-display click-through overlays, menus, usage polling, limit detection and the resume prompt, and the Windows file-dialog watcher.
   - When an event arrives it calls `noteClient()` to resolve the session's app right away. The hook's own process is short-lived, so this can't be done lazily later.
 - **`app/platform.js`** is a façade over `win32.js` / `darwin.js` / `linux.js`, all koffi FFI:
@@ -82,4 +85,6 @@ Data flows one way: **hook → HTTP → `Sessions` → `World` → overlay rende
 - In Git Bash on this project, quoted heredocs still mangle backslashes, so patch files containing `\n` or `\\` with the Edit tool.
 - Electron 45's main-process `clipboard` is the async web API (`readText()` returns a Promise). On Windows use `win32.saveClipboard` / `restoreClipboard` / `setClipboard`; those need an owner window (`setClipboardOwner`, set to an overlay) or Chromium apps paste nothing.
 - `uprightFrom()` converts a wall/ceiling position to feet and sets mode `air`. Measure with `centre(b)` first, since `centre()` needs the wall/ceiling object.
+- The Overlord has no menu any more: its hover panel (`#ovcard` in overlay.html) sends `ov-action`. Skyscraper clicks send `tower` {act: toggle | switch | room}.
+- Quitting from the panel/tray (`quitApp()`) or `claude-buddy stop` (`/quit?home=1`) sends everyone home. A plain `/quit` (what install/setup use to restart) keeps buddies active so they're restored.
 - The usage-limit `RESUME_PROMPT` must only go to sessions recorded as interrupted (`StopFailure` rate_limit during or shortly before the confirmed limit).

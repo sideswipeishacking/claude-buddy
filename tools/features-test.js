@@ -56,7 +56,14 @@ b.pinned = true; // keep it on this monitor while we watch the Overlord
 run(12000, () => world.ov.peek);
 const peek = () => world.ovSnapshot(now).peek;
 run(400);
-check('every few seconds an eye pokes out of the top-left corner', peek() && peek().out > 0.5 && peek().x === 40);
+check('every few seconds an eye pokes out of the top-left corner', peek() && peek().out > 0.5 && peek().x === world.ovHome().x && peek().x >= 40, peek() && `x=${peek().x}`);
+{
+  const was = world.sizes;
+  world.sizes = { internal: 10, external: 10 };
+  const big = world.ovHome().x, ps = Math.max(2, Math.round(world.ovScale() * 0.6));
+  world.sizes = was;
+  check('a bigger Overlord sits further from the screen edge, so it never clips', big - world.displays[0].bounds.x >= 16 * ps, `x=${big} ps=${ps}`);
+}
 world.ov.hovered = true; run(400);
 check('hovering the corner keeps the eye out, looking at you', peek() && peek().out === 1);
 world.ov.hovered = false;

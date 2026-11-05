@@ -56,6 +56,18 @@
   .btn:active { transform: translateY(1px); box-shadow: inset 3px 3px 0 rgba(0,0,0,.35); }
   .btn.primary { background: var(--gold); color: #1a1408; }
   .spacer { flex: 1; }
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px; }
+  .scroll::-webkit-scrollbar { width: 10px; } .scroll::-webkit-scrollbar-thumb { background: var(--line); border: 2px solid var(--panel); }
+  .roomview { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
+  .roomview canvas { image-rendering: pixelated; border: 3px solid #000; box-shadow: 0 0 0 2px #1d1a24; background: #1d1a24; }
+  .roomview .note { font: 11px Consolas, monospace; color: var(--muted); line-height: 1.5; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .chip { min-width: 64px; padding: 4px 6px 3px; background: #181420; border: 2px solid #000; box-shadow: inset 0 0 0 2px #2c2539; cursor: pointer; text-align: center; font: 11px Consolas, monospace; color: var(--muted); text-transform: capitalize; }
+  .chip canvas { display: block; margin: 0 auto 2px; image-rendering: pixelated; }
+  .chip:hover { box-shadow: inset 0 0 0 2px var(--muted); }
+  .chip.sel { box-shadow: inset 0 0 0 3px var(--gold); color: var(--gold); background: #2a2214; }
+  .danger { margin-top: 6px; padding: 7px 12px 6px; border: 2px solid #000; background: #3a1f1f; color: #f6c1bb; font: 700 11px Consolas, monospace; letter-spacing: 1px; cursor: pointer; }
+  .danger.armed { background: #f06a5d; color: #1a0606; }
 </style>
 </head>
 <body>
@@ -91,7 +103,7 @@
 <script>
 'use strict';
 const TABS = [
-  ['hat', 'HAT'], ['hand', 'HAND'], ['face', 'FACE'], ['neck', 'NECK'], ['back', 'BACK'], ['color', 'COLOUR'], ['helpers', 'HELPERS'],
+  ['hat', 'HAT'], ['hand', 'HAND'], ['face', 'FACE'], ['neck', 'NECK'], ['back', 'BACK'], ['color', 'COLOUR'], ['helpers', 'HELPERS'], ['room', 'ROOM'],
 ];
 const SHOWCASE = ['idle', 'cheer', 'typing', 'coding', 'reading', 'celebrate', 'snack', 'look', 'wizard'];
 let look, original, sizes, asDefault = false, tab = 'hat';
@@ -177,6 +189,12 @@ function classTitle(l) {
   if (has('broom')) return 'Tech-Debt Sweeper';
   if (has('antenna', 'headset')) return 'Signal Whisperer';
   if (has('bunny', 'cat', 'bow', 'flower')) return 'Morale Officer';
+  if (has('witch', 'jester', 'unicorn')) return 'Prompt Enchanter';
+  if (has('detective', 'magnifier')) return 'Bug Detective';
+  if (has('knight', 'firefighter', 'police')) return 'Incident Responder';
+  if (has('ufo', 'jetpack', 'visor')) return 'Cloud Navigator';
+  if (has('frog', 'duck', 'pumpkin', 'eggshell')) return 'Rubber Duck Debugger';
+  if (has('sombrero', 'pizza', 'icecream', 'lollipop')) return 'Snack-Driven Developer';
   return 'Apprentice Clawd';
 }
 
@@ -255,14 +273,14 @@ function render() {
   else if (['hand', 'face', 'neck', 'back'].includes(tab)) {
     itemGrid(body, Object.keys(Clawd.ACCESSORIES[tab]), look[tab], (k) => ({ ...base, [tab]: k }), (k) => { look[tab] = k; }, tab === 'back' ? 'cheer' : 'idle');
   } else if (tab === 'color') {
-    body.className = '';
+    body.className = 'scroll';
     const h = (t) => { const e = document.createElement('h3'); e.textContent = t; body.append(e); };
     h('BODY COLOUR');
     swatches(body, Clawd.COLORS, look.body, (c) => { look.body = c; });
     h('EYE COLOUR');
     swatches(body, Clawd.EYE_COLORS, look.eye, (c) => { look.eye = c; });
   } else if (tab === 'helpers') {
-    body.className = '';
+    body.className = 'scroll';
     const tg = document.createElement('label');
     tg.className = 'toggle';
     tg.innerHTML = `<span class="box">${look.helpers !== false ? '✓' : ''}</span> Show helper Clawds when this session uses sub-agents`;
@@ -282,8 +300,64 @@ function render() {
     grid.style.maxHeight = '190px';
     itemGrid(grid, Clawd.HAT_ORDER, look.helper.hat, (k) => ({ hat: k, body: look.helper.body, eye: look.eye }), (k) => { look.helper.hat = k; });
     body.append(grid);
-  }
+  } else if (tab === 'room') renderRoom(body);
   refreshStats();
+}
+
+// ---------------------------------------------------------------- its room in the skyscraper
+function roomCanvas(room, scale, withBuddy) {
+  const T = Clawd.TOWER, cv = document.createElement('canvas');
+  cv.width = (T.WIN_W + 2) * scale * dpr; cv.height = (T.WIN_H + 2) * scale * dpr;
+  cv.style.width = cv.width / dpr + 'px'; cv.style.height = cv.height / dpr + 'px';
+  paint(cv, Clawd.roomPixels(room, true), scale * dpr, scale * dpr, scale * dpr);
+  if (withBuddy) paint(cv, Clawd.mini(0, look.body).pixels, scale * dpr, (T.WIN_X + 4) * scale * dpr, (T.WIN_H - 1) * scale * dpr);
+  return cv;
+}
+
+function chips(host, options, current, choose, preview) {
+  const row = document.createElement('div');
+  row.className = 'chips';
+  for (const key of options) {
+    const c = document.createElement('div');
+    c.className = 'chip' + ((current || null) === key ? ' sel' : '');
+    if (preview) c.append(preview(key));
+    c.append(document.createTextNode(key || 'none'));
+    c.onclick = () => { choose(key); changed(); };
+    row.append(c);
+  }
+  host.append(row);
+}
+
+function renderRoom(body) {
+  body.className = 'scroll';
+  const room = { ...Clawd.DEFAULT_ROOM, ...(look.room || {}) };
+  const set = (k, v) => { look.room = { ...room, [k]: v }; };
+  const view = document.createElement('div');
+  view.className = 'roomview';
+  view.append(roomCanvas(room, 9, true));
+  const note = document.createElement('div');
+  note.className = 'note';
+  note.innerHTML = 'Its floor in the skyscraper<br>(bottom-left of your main screen).<br><br>The light is on while it\'s home.<br>Flip the switch beside the<br>window to send it to work.';
+  view.append(note);
+  body.append(view);
+  const h = (t) => { const e = document.createElement('h3'); e.textContent = t; body.append(e); };
+  const small = (r) => roomCanvas(r, 3, false);
+  h('WALLS');
+  chips(body, Object.keys(Clawd.ROOM.walls), room.wall, (k) => set('wall', k), (k) => small({ ...room, wall: k, furniture: null, sill: null, curtains: null }));
+  h('CURTAINS');
+  chips(body, [null, ...Object.keys(Clawd.ROOM.curtains)], room.curtains, (k) => set('curtains', k), (k) => small({ ...room, curtains: k, furniture: null, sill: null }));
+  h('FURNITURE');
+  chips(body, [null, ...Object.keys(Clawd.ROOM.furniture)], room.furniture, (k) => set('furniture', k), (k) => small({ ...room, furniture: k, sill: null, curtains: null }));
+  h('ON THE WINDOW SILL');
+  chips(body, [null, ...Object.keys(Clawd.ROOM.sill)], room.sill, (k) => set('sill', k), (k) => small({ ...room, sill: k, furniture: null, curtains: null }));
+  const out = document.createElement('button');
+  out.className = 'danger';
+  out.textContent = 'MOVE OUT (FORGET THIS BUDDY)';
+  out.onclick = () => {
+    if (!out.classList.contains('armed')) { out.classList.add('armed'); out.textContent = 'CLICK AGAIN: GONE FOR GOOD'; return; }
+    buddy.send('buddy-forget');
+  };
+  body.append(out);
 }
 
 function changed(rerender = true) {
@@ -299,6 +373,10 @@ function randomize() {
   look.body = Math.random() < 0.4 ? Clawd.COL.body : pick(Object.values(Clawd.COLORS));
   look.helper.body = Math.random() < 0.5 ? look.body : pick(Object.values(Clawd.COLORS));
   look.helper.hat = maybe(Clawd.HAT_ORDER, 0.6);
+  if (tab === 'room') {
+    const R = Clawd.ROOM;
+    look.room = { wall: pick(Object.keys(R.walls)), curtains: maybe(Object.keys(R.curtains), 0.6), furniture: pick(Object.keys(R.furniture)), sill: maybe(Object.keys(R.sill), 0.7) };
+  }
   changed();
 }
 
@@ -308,6 +386,7 @@ buddy.on('init', (d) => {
   original = clone(d.look);
   sizes = d.sizes;
   asDefault = d.isDefault;
+  if (d.tab && TABS.some(([k]) => k === d.tab)) tab = d.tab;
   drawTitle();
   document.getElementById('sub').textContent = `· equipping ${d.name}${d.project && d.project !== d.name ? ` (${d.project})` : ''}`;
   const nick = document.getElementById('nick');
@@ -331,6 +410,7 @@ buddy.on('init', (d) => {
   render();
   requestAnimationFrame(drawStage);
 });
+buddy.on('init-tab', (t) => { if (look && TABS.some(([k]) => k === t)) { tab = t; render(); } });
 </script>
 </body>
 </html>

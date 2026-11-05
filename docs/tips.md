@@ -36,7 +36,8 @@ Small things that make living with buddies nicer.
 
 ### Power users
 
-- **A buddy for every session**: Overlord menu → Settings → *Buddy for every session*. No more `/buddy`.
+- **A buddy for every session**: hover the Overlord → *Buddy for every session*. No more `/buddy`.
 - **`npx github:sideswipeishacking/claude-buddy doctor`** checks your whole setup and says what to fix.
-- **Run the demo** (Overlord menu → *Summon a demo buddy*) to see what a busy session looks like without spending tokens.
+- **Run the demo** (hover the Overlord → *Summon a demo buddy*) to see what a busy session looks like without spending tokens. Run two, and once they're done working, watch what they get up to.
+- **The skyscraper's switches** are the quickest way to bring back a buddy whose session is quiet.
 - **Change the port** with `CLAUDE_BUDDY_PORT` if `47321` is taken. Set it where both Claude Code and the app can see it.

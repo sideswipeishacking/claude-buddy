@@ -7,10 +7,11 @@ This is a short tour. It covers what you can *do* with your buddies and leaves m
 - [3. Hover, click, drag](#3-hover-click-drag)
 - [4. When Claude needs you](#4-when-claude-needs-you)
 - [5. Meet the Overlord](#5-meet-the-overlord)
-- [6. Make it yours: the Buddy Workshop](#6-make-it-yours-the-buddy-workshop)
-- [7. Feed it files](#7-feed-it-files)
-- [8. More than one session](#8-more-than-one-session)
-- [9. Sending a buddy home](#9-sending-a-buddy-home)
+- [6. The skyscraper](#6-the-skyscraper)
+- [7. Make it yours: the Buddy Workshop](#7-make-it-yours-the-buddy-workshop)
+- [8. Feed it files](#8-feed-it-files)
+- [9. More than one session](#9-more-than-one-session)
+- [10. Sending a buddy home](#10-sending-a-buddy-home)
 
 ## 1. Summon your first buddy
 
@@ -41,7 +42,10 @@ When nothing is happening it lives its own life on your desktop. Leave it alone 
 - **Hover** a buddy to see its name and a card with its session's status: the current step of Claude's plan, Claude's latest thought, how long it's been working, and a **context ring** showing how full the session's context window is.
 - **Click** a buddy to jump to its session: it brings the right terminal, IDE window or Claude app conversation to the front. (In an IDE with the Claude Code extension it opens that exact session's tab.)
 - **Drag** a buddy to move it. Let go mid-fling and you'll throw it.
-- **Right-click** for its menu: Customize, Come here, Stay put, helpers on/off, a snack, a game of fetch, open the project folder, mute, hide for a while, send home. See [commands](commands.md#the-buddy-menu-right-click).
+- **Shake** it gently while holding it to wake it up if it's napping. (Gently.)
+- **Right-click** for its menu: Customize, decorate its room, wake up, Come here, Stay put, helpers on/off, a snack, a game of fetch, open the project folder, mute, hide for a while, send home. See [commands](commands.md#the-buddy-menu-right-click).
+
+When they have nothing to do, buddies look each other up (even on another screen) and hang out for a bit.
 
 *Come here* asks you to click where it should go: a little flag marks the spot and it makes its way there. *Stay put* makes it stay exactly where it is, even mid-air or upside down on the ceiling.
 
@@ -62,28 +66,44 @@ If an app is running **fullscreen** (a game, a video, a presentation), buddies o
 
 ## 5. Meet the Overlord
 
-The first buddy you ever summon gets built by **the Overlord**: a mechanical eye that, afterwards, lives in the **top edge of your screen**. Every now and then it peeks out of the top-left corner to look around.
+Every brand-new buddy gets built by **the Overlord**: a mechanical eye that, afterwards, lives in the **top edge of your screen**. Every now and then it peeks out of the top-left corner to look around.
 
-- **Hover the top-left corner** to see the Overlord's card: your **current session (5-hour) usage** and **weekly usage** with reset times, plus every buddy you've ever made and whether it's on.
-- **Click the corner** and the Overlord drops down with a menu. You can turn any buddy on or off (it remembers each one's look and name), reach every buddy's options, gather all buddies at a spot, open the animation gallery, and change settings (sizes, sounds, typing along, start at login).
+**Hover the top-left corner** for the Overlord's panel:
+
+- your **current session (5-hour) usage** and **weekly usage**, with reset times;
+- **actions**: gather everyone at a spot, wake everyone up, show or tuck away the skyscraper, a demo buddy, the animation gallery;
+- **settings**: sounds, typing along, a buddy for every session, start at login, hide buddies, and the pixel size on the laptop screen and on other monitors;
+- **Quit** (everyone goes home first).
 
 And if you ever hit your usage limit… well. You'll see.
 
-## 6. Make it yours: the Buddy Workshop
+## 6. The skyscraper
+
+Buddies don't vanish when they're off duty: they live in **the skyscraper** at the bottom-left of your main screen, one floor each (oldest at the bottom).
+
+- It's tucked into the ground until you want it. **Click the little roof** that peeks out to bring it up; the **▼ button** on the roof tucks it away again. It also pops up by itself whenever someone comes or goes.
+- A **lit window** means that buddy is home; a **dark** one means it's out on your desktop.
+- The **switch** on the left of each floor turns that buddy on (it rides down and heads out to work) or off (it walks home and rides up).
+- **Click a window** to decorate the room: wall colour, curtains, a piece of furniture and something for the window sill. (Also in the Workshop's **Room** tab.)
+
+Only brand-new buddies get built by the Overlord; ones you've met before simply come out of the skyscraper.
+
+## 7. Make it yours: the Buddy Workshop
 
 Type `/buddy custom` (or right-click → **Customize…**) to open the Buddy Workshop, an RPG-style character screen with a live preview:
 
-- **Hat:** 28 of them (wizard, crown, hard hat, viking, propeller cap, halo, cat ears…)
-- **Hand:** wand, staff, broom, sword, balloon, flag, mug, flower, torch
-- **Face, Neck, Back:** glasses, monocle, mustache, scarf, bow tie, capes, wings…
+- **Hat:** 46 of them (wizard, crown, hard hat, viking, witch, knight, sombrero, UFO, rain cloud, frog, rubber duck…)
+- **Hand:** wand, staff, broom, sword, balloon, umbrella, ice cream, magnifier, wrench, trophy, fishing rod…
+- **Face, Neck, Back:** glasses, heart glasses, visor, eye patch, beard, scarf, bow tie, medal, lei, capes, wings, backpack, jetpack…
 - **Colour:** body and eye colours, including a custom colour picker
 - **Size** and the look of its **helpers**
+- **Room:** its floor in the skyscraper (see above)
 
 Changes preview live on your desktop. **Equip** keeps them, closing the window throws them away, and **Use as default** makes new buddies start from this look (each still gets its own hat so you can tell them apart). Give it a nickname while you're there.
 
 Quick changes without the Workshop: `/buddy hat crown`, `/buddy name Pixel`, `/buddy size 3`. See [commands](commands.md).
 
-## 7. Feed it files
+## 8. Feed it files
 
 Drag one or more files from your file manager onto a buddy and let go. It happily eats them, and the files land in **that session's prompt box**, ready for your next message. You don't have to switch windows first.
 
@@ -91,7 +111,7 @@ Drag one or more files from your file manager onto a buddy and let go. It happil
 - On **Windows** you can also feed it from the Claude app's or your IDE's **"Add files"** dialog: select files and click **Open** while its buddy is around. Try it in both a list view and an icon view.
 - On **macOS** this needs Accessibility permission; see [platforms](platforms.md#macos).
 
-## 8. More than one session
+## 9. More than one session
 
 Each Claude Code session gets its own buddy, so it's easy to keep an eye on several at once. A few things help:
 
@@ -100,9 +120,9 @@ Each Claude Code session gets its own buddy, so it's easy to keep an eye on seve
 - Separate sizes for your laptop screen and external monitors: `/buddy size laptop 2`, `/buddy size external 4`.
 - Buddies that hang around each other get friendly.
 
-## 9. Sending a buddy home
+## 10. Sending a buddy home
 
-`/buddy off` in the session (or right-click → **Send home**) waits for a little goodbye and then it's gone. Buddies also leave on their own when their session ends. The Overlord remembers them, so turning one back on from its menu brings it back with the same look and name.
+`/buddy off` in the session (or right-click → **Send home**, or its switch in the skyscraper) and it waves goodbye and walks home to its floor. Buddies also go home on their own when their session ends, and everyone goes home when you quit Claude Buddy. Flip its switch (or `/buddy` again) to bring it back out with the same look and name.
 
 ---
 

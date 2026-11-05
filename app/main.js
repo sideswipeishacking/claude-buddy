@@ -60,7 +60,17 @@ const timers = [];
 let keyWatcher = null;
 let lastKeyAt = 0;
 const keyFlags = new Int32Array(new SharedArrayBuffer(4)); // [0] = swallow Enter for a watched file dialog
-app.on('before-quit', () => { quitting = true; timers.forEach(clearInterval); keyWatcher?.stop(); releaseAllPermissions(); uia?.kill(); });
+app.on('before-quit', () => {
+  quitting = true;
+  timers.forEach(clearInterval);
+  keyWatcher?.stop();
+  releaseAllPermissions();
+  uia?.kill();
+  // Quitting sends everyone home (they come back out when you turn them on, or with /buddy).
+  // A restart for an update (/quit from the installer) keeps them out, so they're restored afterwards.
+  if (quitStarted) for (const e of Object.values(store.registry)) e.active = false;
+  try { clearTimeout(saveTimer); fs.writeFileSync(storeFile(), JSON.stringify(store, null, 2)); } catch (err) { logError(err, 'save on quit'); }
+});
 
 // ---------------------------------------------------------------- settings & the buddy registry
 // registry: every buddy ever created, by session id: its look, name and whether it's on.
@@ -117,6 +127,7 @@ const world = new World({
   },
   focus(b) { focusSession(b.session); },
   removed(id) { if (store.registry[id]) { store.registry[id].active = false; saveStore(); } refreshTray(); },
+  stale(id) { sendHome(id); },
   overlordBorn() { store.overlordBorn = true; saveStore(); },
   error(err, where) { logError(err, where); },
   released(results) { onReleased(results); },
@@ -152,8 +163,36 @@ function remember(s, b, active = true) {
     ...prev, active, lastSeen: Date.now(), ts: Date.now(),
     look: b ? b.look : prev.look, muted: b ? b.muted : prev.muted, pinned: b ? b.pinned : prev.pinned, where: s.where || prev.where,
     name: s.name || prev.name, nickname: s.nickname || prev.nickname || '', source: s.source || prev.source, cwd: s.cwd || prev.cwd, transcript: s.transcript || prev.transcript,
+    client: s.client || prev.client, app: appRecord(s) || prev.app,
   };
   saveStore();
+  updateResidents();
+}
+
+/** The skyscraper's floors: every known buddy, oldest at the bottom. */
+function updateResidents() {
+  const list = Object.entries(store.registry)
+    .filter(([id]) => !id.startsWith('demo-'))
+    .sort((a, b) => (a[1].created || 0) - (b[1].created || 0))
+    .map(([id, e]) => ({
+      id, name: e.nickname || e.name || 'buddy', body: (e.look && e.look.body) || Clawd.COL.body, hat: e.look && e.look.hat,
+      room: e.look && e.look.room, created: e.created || 0, seen: e.lastSeen || 0,
+    }));
+  world.setResidents(list);
+}
+
+/** The app a session runs in, worth keeping across restarts (its window owner's pid survives our restart). */
+const appRecord = (s) => (s.app && s.app.pid ? { pid: s.app.pid, exe: s.app.exe, path: s.app.path, kind: s.app.kind, name: s.app.name, scheme: s.app.scheme } : null);
+
+/** Fill a session from its saved registry entry (after a restart, or when turned on again). */
+function hydrate(s, saved) {
+  Object.assign(s, {
+    name: saved.name || s.name, nickname: s.nickname || saved.nickname || '', source: s.source !== 'Claude Code' && s.sourceRefined ? s.source : saved.source || s.source,
+    where: s.where || saved.where || whereFromSource(saved.source), cwd: s.cwd || saved.cwd || '', transcript: s.transcript || saved.transcript || '',
+  });
+  if (!s.client && saved.client) s.client = saved.client;
+  if (!s.app && saved.app) s.app = { ...saved.app, at: 0 }; // re-checked (and kept if that program still runs)
+  if (saved.source && !s.sourceRefined) s.sourceRefined = !['IDE', 'IDE terminal', 'Terminal', 'JetBrains IDE'].includes(saved.source);
 }
 
 function summon(s, cmd = {}, { birth = true } = {}) {
@@ -161,8 +200,12 @@ function summon(s, cmd = {}, { birth = true } = {}) {
   if (!b) {
     const saved = store.registry[s.id];
     if (saved && !s.nickname) s.nickname = saved.nickname || '';
-    b = world.add(s, { look: lookFor(saved, cmd), x: screen.getCursorScreenPoint().x, birth });
+    const look = lookFor(saved, cmd);
+    // A buddy that already lives in the skyscraper takes the elevator down; only brand-new buddies get printed.
+    b = saved && birth ? world.leaveHome(s, look) : world.add(s, { look, x: screen.getCursorScreenPoint().x, birth });
     if (saved) { b.muted = !!saved.muted; b.pinned = !!saved.pinned; }
+  } else if (world.homeBound(b)) {
+    b.task = null; // it was on its way home: it stays out after all
   } else if (cmd.action === 'hat' && Clawd.HATS[cmd.value]) {
     world.setLook(s.id, { ...b.look, hat: cmd.value });
   }
@@ -171,11 +214,27 @@ function summon(s, cmd = {}, { birth = true } = {}) {
   return b;
 }
 
-function sendHome(id) {
-  world.remove(id);
+/** Off duty: it walks back to the skyscraper and rides up to its floor (demo buddies just poof). */
+function sendHome(id, { hurry = false } = {}) {
   const s = sessions.map.get(id);
+  const demo = String(id).startsWith('demo-');
   if (store.registry[id]) { store.registry[id].active = false; saveStore(); }
-  else if (s) remember(s, null, false);
+  else if (s && !demo) remember(s, world.get(id), false);
+  if (demo || !store.registry[id] || !world.goHome(id, { hurry })) world.remove(id);
+  updateResidents();
+}
+
+/** Quitting: everyone hurries home first (a few seconds at most), then the app closes. */
+let quitStarted = false;
+function quitApp() {
+  if (quitStarted) return;
+  quitStarted = true;
+  for (const b of [...world.buddies.values()]) sendHome(b.id, { hurry: true });
+  const until = Date.now() + 8000;
+  const wait = setInterval(() => {
+    const out = [...world.buddies.values()].filter((b) => b.mode !== 'hell');
+    if (!out.length || Date.now() > until) { clearInterval(wait); setTimeout(() => app.quit(), out.length ? 0 : 900); }
+  }, 100);
 }
 
 /** Turn a registered buddy back on (from the Overlord), even if its session is quiet right now. */
@@ -183,7 +242,7 @@ function turnOn(id) {
   const saved = store.registry[id];
   if (!saved) return;
   const s = sessions.get(id);
-  Object.assign(s, { name: saved.name || s.name, nickname: s.nickname || saved.nickname || '', source: saved.source || s.source, cwd: s.cwd || saved.cwd || '', transcript: s.transcript || saved.transcript || '' });
+  hydrate(s, saved);
   if (!s.lastEventAt || s.lastEventAt < Date.now() - 3600e3) s.lastEventAt = Date.now();
   summon(s);
 }
@@ -241,7 +300,8 @@ function restoreBuddies() {
     if (!saved.active) continue;
     if (Date.now() - (saved.lastSeen || 0) > 12 * 3600e3) { saved.active = false; continue; }
     const s = sessions.get(id);
-    Object.assign(s, { name: saved.name || s.name, nickname: saved.nickname || '', source: saved.source || s.source, where: saved.where || s.where || whereFromSource(saved.source), cwd: saved.cwd || '', transcript: saved.transcript || '', lastEventAt: saved.lastSeen });
+    hydrate(s, saved);
+    s.lastEventAt = saved.lastSeen;
     const b = world.restore(s, lookFor(saved));
     b.muted = !!saved.muted;
     b.pinned = !!saved.pinned;
@@ -312,7 +372,8 @@ function focusSession(s) {
 function buddyForWindow(fg) {
   if (!fg || !fg.pid) return null;
   const live = [...world.buddies.values()].filter((b) => !b.leaving && b.mode !== 'hell');
-  const mine = live.filter((b) => { try { return resolveApp(b.session).pid === fg.pid; } catch { return false; } });
+  let mine = live.filter((b) => { try { return resolveApp(b.session).pid === fg.pid; } catch { return false; } });
+  if (!mine.length && fg.exe) mine = live.filter((b) => { try { const a = resolveApp(b.session); return !a.pid && a.exe && a.exe.toLowerCase() === fg.exe.toLowerCase(); } catch { return false; } });
   if (mine.length <= 1) return mine[0] || null;
   const title = (fg.title || '').toLowerCase();
   const named = mine.filter((b) => { const n = (b.session.name || '').toLowerCase(); return n && title.includes(n); });
@@ -383,7 +444,7 @@ function watchDialogs() {
   }
   if (!watched) {
     for (const d of dialogs) {
-      const b = buddyForWindow({ exe: d.exe, title: d.ownerTitle });
+      const b = buddyForWindow({ pid: d.pid, exe: d.exe, title: d.ownerTitle });
       if (b && d.open) { watched = { id: d.id, dialog: d, buddyId: b.id, state: 'armed' }; break; }
     }
   } else {
@@ -599,20 +660,72 @@ async function sendResume(s, { fromClick = false } = {}) {
 
 function overlordCard() {
   if (Date.now() - usage.at > 60e3) fetchUsage();
-  const buddies = Object.entries(store.registry)
-    .sort((a, b) => (b[1].lastSeen || 0) - (a[1].lastSeen || 0))
-    .slice(0, 12)
-    .map(([id, e]) => {
-      const b = world.get(id);
-      const on = !!b && !b.leaving;
-      const status = !on ? 'off' : b.mode === 'hell' ? 'banished' : b.session.card().status;
-      return { id, name: e.nickname || e.name || 'buddy', on, status, source: e.source || '', body: e.look?.body || Clawd.COL.body };
-    });
+  const live = [...world.buddies.values()].filter((b) => !b.leaving && b.mode !== 'ride');
   const L = store.limit;
-  return { usage: usage.data, error: usage.error, buddies, total: Object.keys(store.registry).length, limit: L ? { kind: L.kind, resetsAt: L.resetsAt, interrupted: L.interrupted.length } : null };
+  return {
+    usage: usage.data, error: usage.error,
+    counts: { out: live.length, home: Object.keys(store.registry).filter((id) => !world.has(id)).length, sleeping: live.filter((b) => b.sleeping).length },
+    settings: {
+      hidden: !!store.hidden, sound: !store.muted, typing: !!store.typing, auto: !!store.autoSummon, login: !!store.startWithWindows,
+      tower: !!world.tower.open, internal: store.sizes.internal, external: store.sizes.external, mac: OS === 'darwin',
+    },
+    limit: L ? { kind: L.kind, resetsAt: L.resetsAt, interrupted: L.interrupted.length } : null,
+  };
 }
 
-// ---------------------------------------------------------------- menus (buddy right-click, Overlord left-click)
+function setHidden(on) {
+  store.hidden = on;
+  saveStore();
+  for (const o of overlays.values()) on ? o.win.hide() : o.win.showInactive();
+}
+
+function setTyping(on) {
+  store.typing = on;
+  saveStore();
+  if (on) startKeyWatcher(); else { keyWatcher?.stop(); keyWatcher = null; }
+}
+
+function toggleTower(open) {
+  world.towerToggle(open);
+  store.towerOpen = world.tower.open;
+  saveStore();
+}
+
+/** Buttons on the Overlord's hover panel. */
+ipcMain.on('ov-action', (e, { act, value } = {}) => {
+  world.ovKeep(3000);
+  const live = [...world.buddies.values()].filter((b) => !b.leaving && !['ride', 'enter', 'hell', 'doom'].includes(b.mode));
+  if (act === 'gather') { if (live.length) startPlacing(live.map((b) => b.id)); }
+  else if (act === 'wake') { for (const b of live) if (b.sleeping) world.wake(b); }
+  else if (act === 'demo') runDemo((ev) => sessions.handle(ev));
+  else if (act === 'gallery') openGallery();
+  else if (act === 'tower') toggleTower();
+  else if (act === 'hidden') setHidden(!store.hidden);
+  else if (act === 'sound') { store.muted = !store.muted; saveStore(); }
+  else if (act === 'typing') setTyping(!store.typing);
+  else if (act === 'auto') { store.autoSummon = !store.autoSummon; saveStore(); }
+  else if (act === 'login') { store.startWithWindows = !store.startWithWindows; setLoginItem(store.startWithWindows); saveStore(); }
+  else if (act === 'size') {
+    const [which, d] = String(value || '').split(':');
+    if (store.sizes[which] !== undefined) setSize(which, store.sizes[which] + (Number(d) || 0));
+  } else if (act === 'quit') quitApp();
+  refreshTray();
+});
+
+/** Clicks on the skyscraper: the collapse button, a floor's light switch, or its window (decorate the room). */
+ipcMain.on('tower', (e, { act, id } = {}) => {
+  if (act === 'toggle') return toggleTower();
+  if (act === 'switch' && id) {
+    const b = world.get(id);
+    if (b && world.homeBound(b)) { b.task = null; if (store.registry[id]) { store.registry[id].active = true; saveStore(); } } // changed its mind
+    else if (b && b.mode !== 'enter') sendHome(id);
+    else if (!b && store.registry[id]) turnOn(id);
+    return;
+  }
+  if (act === 'room' && id && store.registry[id]) openWorkshop(id, 'room');
+});
+
+// ---------------------------------------------------------------- menus (buddy right-click)
 function startPlacing(ids) {
   placing = { ids, until: Date.now() + 20000 };
 }
@@ -622,6 +735,8 @@ function buddyItems(b, point) {
   const save = () => remember(s, b);
   return [
     { label: 'Customize…', click: () => openWorkshop(id) },
+    { label: 'Decorate its room…', click: () => openWorkshop(id, 'room') },
+    { label: 'Wake up', enabled: !!b.sleeping, click: () => world.wake(b) },
     { label: 'Come here (place a marker)', click: () => startPlacing([id]) },
     { label: 'Stay put', type: 'checkbox', checked: b.pinned, click: (i) => { world.setPinned(b, i.checked); save(); } },
     { label: 'Show helpers (sub-agents)', type: 'checkbox', checked: b.look.helpers !== false, click: (i) => { world.setLook(id, { ...b.look, helpers: i.checked }); save(); } },
@@ -646,9 +761,10 @@ function showBuddyMenu(id, overlay) {
 
 function settingsItems() {
   return [
-    { label: 'Hide buddies', type: 'checkbox', checked: store.hidden, click: (i) => { store.hidden = i.checked; saveStore(); for (const o of overlays.values()) i.checked ? o.win.hide() : o.win.showInactive(); } },
+    { label: 'Hide buddies', type: 'checkbox', checked: store.hidden, click: (i) => setHidden(i.checked) },
+    { label: 'Show the skyscraper', type: 'checkbox', checked: !!world.tower.open, click: (i) => toggleTower(i.checked) },
     { label: 'Sound effects', type: 'checkbox', checked: !store.muted, click: (i) => { store.muted = !i.checked; saveStore(); } },
-    { label: OS === 'darwin' ? 'Type along when I type (asks for Input Monitoring)' : 'Type along when I type', type: 'checkbox', checked: !!store.typing, click: (i) => { store.typing = i.checked; saveStore(); if (i.checked) startKeyWatcher(); else { keyWatcher?.stop(); keyWatcher = null; } } },
+    { label: OS === 'darwin' ? 'Type along when I type (asks for Input Monitoring)' : 'Type along when I type', type: 'checkbox', checked: !!store.typing, click: (i) => setTyping(i.checked) },
     ...[['internal', 'Size on the laptop screen'], ['external', 'Size on other monitors']].map(([which, label]) => ({
       label: `${label}: ${store.sizes[which]}`,
       submenu: [1, 2, 3, 4, 5, 6, 8, 10].map((n) => ({ label: String(n), type: 'radio', checked: store.sizes[which] === n, click: () => setSize(which, n) })),
@@ -658,60 +774,60 @@ function settingsItems() {
   ];
 }
 
-/** The Overlord's menu: every buddy (on/off plus its options), group actions and settings. */
-function showOverlordMenu(overlay) {
-  const point = screen.getCursorScreenPoint();
-  const entries = Object.entries(store.registry).sort((a, b) => (b[1].lastSeen || 0) - (a[1].lastSeen || 0)).slice(0, 25);
-  const live = [...world.buddies.values()].filter((b) => !b.leaving);
-  const menu = Menu.buildFromTemplate([
-    { label: `OVERLORD  ·  ${live.length} on / ${entries.length} known`, enabled: false },
-    { type: 'separator' },
-    ...entries.map(([id, e]) => {
-      const b = world.get(id);
-      const on = !!b && !b.leaving;
-      const name = e.nickname || e.name || 'buddy';
-      return {
-        label: `${on ? '●' : '○'}  ${name}${e.source ? `  ·  ${e.source}` : ''}`,
-        submenu: on
-          ? [{ label: 'On', type: 'checkbox', checked: true, click: () => sendHome(id) }, { type: 'separator' }, ...buddyItems(b, point)]
-          : [{ label: 'On', type: 'checkbox', checked: false, click: () => turnOn(id) }, { label: 'Forget this buddy', click: () => { delete store.registry[id]; saveStore(); } }],
-      };
-    }),
-    { type: 'separator' },
-    { label: 'Gather all buddies (place a marker)', enabled: live.length > 0, click: () => startPlacing(live.map((b) => b.id)) },
-    { label: 'Summon a demo buddy', click: () => runDemo((ev) => sessions.handle(ev)) },
-    { label: 'Animation gallery…', click: openGallery },
-    { label: 'Settings', submenu: settingsItems() },
-    { type: 'separator' },
-    { label: 'Quit Claude Buddy', click: () => app.quit() },
-  ]);
-  menu.popup({ ...(overlay && !overlay.win.isDestroyed() ? { window: overlay.win } : {}), callback: () => world.ovKeep(3500) });
-}
-
 // ---------------------------------------------------------------- the Buddy Workshop (customizer)
-function openWorkshop(id) {
-  const b = world.get(id);
-  if (!b) return;
-  const existing = workshops.get(id);
-  if (existing && !existing.isDestroyed()) { existing.show(); existing.focus(); return; }
+// A Workshop window is kept loaded in the background, so opening one is instant (the first open
+// used to load for a while, and could end up under the buddies' overlay).
+let spareWorkshop = null;
+function makeWorkshopWindow() {
   const win = new BrowserWindow({
-    width: 980, height: 680, frame: false, resizable: false, backgroundColor: '#15121c', show: false, alwaysOnTop: true,
-    title: 'Buddy Workshop', autoHideMenuBar: true,
+    width: 980, height: 680, frame: false, resizable: false, backgroundColor: '#15121c', show: false,
+    title: 'Buddy Workshop', autoHideMenuBar: true, skipTaskbar: false,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
-  workshops.set(id, win);
-  win.workshop = { id, original: JSON.parse(JSON.stringify(b.look)), saved: false };
+  win.setAlwaysOnTop(true, 'screen-saver', 1); // above the overlays, which sit at 'screen-saver' too
+  win.loaded = new Promise((resolve) => win.webContents.once('did-finish-load', resolve));
   win.loadFile(path.join(__dirname, 'customizer.html'));
-  win.once('ready-to-show', () => { win.center(); win.show(); win.focus(); });
-  win.webContents.on('did-finish-load', () => win.webContents.send('init', {
-    poses, id, look: b.look, name: b.session.displayName, nickname: b.session.nickname || '', project: b.session.name,
-    sizes: store.sizes, isDefault: !!store.defaultLook && JSON.stringify(store.defaultLook) === JSON.stringify(b.look),
-  }));
+  return win;
+}
+function prepareSpareWorkshop() {
+  if (!spareWorkshop || spareWorkshop.isDestroyed()) spareWorkshop = makeWorkshopWindow();
+}
+
+/** Open the Buddy Workshop for a buddy (out and about, or at home in the skyscraper). */
+function openWorkshop(id, tab) {
+  // Called from menus: wait until the menu has closed before opening a window.
+  setTimeout(() => openWorkshopNow(id, tab).catch((err) => logError(err, 'workshop')), 60);
+}
+async function openWorkshopNow(id, tab) {
+  const b = world.get(id);
+  const saved = store.registry[id];
+  if (!b && !saved) return;
+  const existing = workshops.get(id);
+  if (existing && !existing.isDestroyed()) { if (tab) existing.webContents.send('init-tab', tab); existing.show(); existing.moveTop(); existing.focus(); return; }
+  const look = b ? b.look : fullLook(saved.look || {});
+  const s = b ? b.session : null;
+  prepareSpareWorkshop();
+  const win = spareWorkshop;
+  spareWorkshop = null;
+  workshops.set(id, win);
+  win.workshop = { id, original: JSON.parse(JSON.stringify(look)), saved: false };
   win.on('closed', () => {
     // Closing without equipping puts the old look back.
-    if (!win.workshop.saved) world.setLook(id, win.workshop.original);
+    if (!win.workshop.saved && world.get(id)) world.setLook(id, win.workshop.original);
     workshops.delete(id);
   });
+  for (const o of overlays.values()) { o.caps.hover = false; applyCapture(o); } // nothing of ours may sit on top of it
+  await win.loaded;
+  win.webContents.send('init', {
+    poses, id, look, name: s ? s.displayName : saved.nickname || saved.name || 'buddy', nickname: (s ? s.nickname : saved.nickname) || '', project: s ? s.name : saved.name,
+    sizes: store.sizes, isDefault: !!store.defaultLook && JSON.stringify({ ...store.defaultLook, room: undefined }) === JSON.stringify({ ...look, room: undefined }),
+    tab: tab || 'hat', home: !b,
+  });
+  win.center();
+  win.show();
+  win.moveTop();
+  win.focus();
+  setTimeout(prepareSpareWorkshop, 1500); // ready for the next one
 }
 
 const workshopOf = (sender) => [...workshops.values()].find((w) => !w.isDestroyed() && w.webContents === sender);
@@ -723,12 +839,33 @@ ipcMain.on('look-save', (e, { look, nickname, asDefault }) => {
   if (b) {
     world.setLook(b.id, look);
     b.session.nickname = String(nickname || '').slice(0, 18);
-    if (asDefault) store.defaultLook = { ...b.look };
+    if (asDefault) store.defaultLook = { ...b.look, room: undefined };
     remember(b.session, b);
     b.push('cheer', 800, { sound: 'done' });
+  } else if (store.registry[w.workshop.id]) {
+    // At home in the skyscraper: just save the new look (and room).
+    const e = store.registry[w.workshop.id];
+    e.look = fullLook(look);
+    e.nickname = String(nickname || '').slice(0, 18);
+    if (asDefault) store.defaultLook = { ...e.look, room: undefined };
+    saveStore();
   }
+  updateResidents();
   w.workshop.saved = true;
   w.close();
+});
+ipcMain.on('buddy-forget', (e) => {
+  // "Move out" in the Workshop: the buddy and its floor are gone for good.
+  const w = workshopOf(e.sender);
+  if (!w) return;
+  const id = w.workshop.id;
+  w.workshop.saved = true;
+  w.close();
+  if (world.get(id)) world.remove(id);
+  delete store.registry[id];
+  saveStore();
+  updateResidents();
+  refreshTray();
 });
 ipcMain.on('win-close', (e) => { const w = workshopOf(e.sender) || BrowserWindow.fromWebContents(e.sender); w?.close(); });
 
@@ -775,7 +912,8 @@ function rebuildOverlays() {
   for (const d of displays) if (!overlays.has(d.id)) createOverlay(d);
   const owner = [...overlays.values()][0];
   if (owner) platform.setClipboardOwner(owner.win.getNativeWindowHandle()); // Windows: what we paste needs an owner window
-  world.setDisplays(displays.map((d) => ({ id: d.id, bounds: d.bounds, workArea: d.workArea, internal: !!d.internal })));
+  const primary = screen.getPrimaryDisplay().id;
+  world.setDisplays(displays.map((d) => ({ id: d.id, bounds: d.bounds, workArea: d.workArea, internal: !!d.internal, primary: d.id === primary })));
 }
 
 function overlayFor(sender) {
@@ -788,16 +926,11 @@ ipcMain.on('hover', (e, id) => {
   if (o) { o.caps.hover = !!id; applyCapture(o); }
   world.ov.hovered = id === 'overlord';
   if (id === 'overlord') world.ovKeep(2500);
-  world.setHover(id && id !== 'overlord' && id !== 'dialog' ? id : null);
+  world.setHover(id && id !== 'overlord' && id !== 'dialog' && !String(id).startsWith('tower') ? id : null);
 });
 ipcMain.on('grab', (e, id) => world.grab(id));
 ipcMain.on('release', () => world.release());
 ipcMain.on('context', (e, id) => (id === 'overlord' ? null : showBuddyMenu(id, overlayFor(e.sender))));
-ipcMain.on('overlord-click', (e) => {
-  const o = overlayFor(e.sender);
-  world.ovDetach();
-  setTimeout(() => showOverlordMenu(o), 380);
-});
 ipcMain.on('dialog-open-click', () => interceptOpen('click'));
 ipcMain.on('drag-over', (e, id) => { const b = world.get(id); if (b) b.dragHint = Date.now(); });
 ipcMain.on('files-dropped', (e, { id, paths }) => {
@@ -853,7 +986,7 @@ function tick() {
   let dropOver = null;
   if (down && !anyHeld) {
     for (const b of world.buddies.values()) {
-      if (b.leaving || ['birth', 'script', 'hell', 'doom'].includes(b.mode) || b.hide) continue;
+      if (b.leaving || ['birth', 'script', 'hell', 'doom', 'ride', 'enter'].includes(b.mode) || b.hide) continue;
       const m = world.centre(b), r = 10 * b.scale + 10, h = 6 * b.scale + 10;
       if (Math.abs(c.x - m.x) < r && Math.abs(c.y - m.y) < h) { dropOver = overlayAt(c.x, c.y); break; }
     }
@@ -863,7 +996,8 @@ function tick() {
   const snap = world.snapshot(now);
   if (snap.overlord && snap.overlord.hovered) snap.overlord.card = overlordCard();
   const dialogHot = watched && watched.state === 'armed' && watched.dialog.open ? physToDip({ ...watched.dialog.open.rect }) : null;
-  const busy = snap.buddies.length || snap.items.length || snap.overlord || snap.covers.length || snap.doom || placing;
+  const busy = snap.buddies.length || snap.items.length || snap.overlord || snap.covers.length || snap.doom || placing || snap.tower || snap.puke;
+  const tower = snap.tower && !world.hiddenDisplays.has(snap.tower.d) ? snap.tower : null;
   if (!busy) { if (idleFrames++ > 2) return; } else idleFrames = 0;
   for (const o of overlays.values()) {
     if (!o.ready || o.win.isDestroyed()) continue;
@@ -871,7 +1005,8 @@ function tick() {
     const near = (x, y) => x > b.x - m && x < b.x + b.width + m && y > b.y - m && y < b.y + b.height + m;
     const mine = snap.buddies.filter((s) => near(s.x, s.y) || (s.birth && near(s.birth.x, s.birth.y)) || (s.marker && near(s.marker.x, s.marker.y)) || s.minis.some((mi) => near(mi.x, mi.y)));
     o.win.webContents.send('frame', {
-      buddies: mine, items: snap.items.filter((it) => near(it.x, it.y)), overlord: snap.overlord, covers: snap.covers, doom: snap.doom,
+      buddies: mine, items: snap.items.filter((it) => near(it.x, it.y)), overlord: snap.overlord, covers: snap.covers, doom: snap.doom, tower,
+      puke: snap.puke && { drops: snap.puke.drops.filter((d) => near(d.x, d.y)), puddles: snap.puke.puddles.filter((q) => near(q.x, q.y)) },
       cursor: OS === 'linux' ? { x: c.x - b.x, y: c.y - b.y } : null,
       placing: !!placing, anyHeld, dialogHot: dialogHot ? { x: dialogHot.x, y: dialogHot.y, w: dialogHot.width, h: dialogHot.height } : null,
     });
@@ -928,7 +1063,11 @@ function noteClient(ev) {
   if (!ev.client || !ev.client.pid) return;
   const s = sessions.map.get(ev.session_id);
   if (!s || (s.app && s.app.pid && Date.now() - s.app.at < 120e3)) return;
-  try { resolveApp(s, { fresh: true }); } catch (err) { logError(err, 'resolve app'); }
+  try {
+    resolveApp(s, { fresh: true });
+    const saved = store.registry[s.id];
+    if (saved && appRecord(s)) { saved.app = appRecord(s); saved.client = s.client; saved.where = s.where; saved.source = s.source; saveStore(); }
+  } catch (err) { logError(err, 'resolve app'); }
 }
 
 function startServer() {
@@ -957,7 +1096,7 @@ function startServer() {
       if (req.method === 'GET' && url.pathname === '/debug/state') {
         return reply(200, {
           displays: world.displays, platforms: world.platforms, overlord: world.ovSnapshot(Date.now()), watched: watched && { id: watched.id, state: watched.state, buddy: watched.buddyId, open: watched.dialog.open && watched.dialog.open.rect },
-          limit: store.limit, doom: world.doomSnapshot(Date.now()),
+          limit: store.limit, doom: world.doomSnapshot(Date.now()), tower: world.towerSnapshot(Date.now()),
           buddies: [...world.buddies.values()].map((b) => ({ id: b.id, name: b.session.displayName, source: b.session.source, where: b.session.where,
             app: (() => { try { const a = resolveApp(b.session); return { kind: a.kind, name: a.name, exe: a.exe, pid: a.pid, scheme: a.scheme }; } catch { return null; } })(), x: b.x, y: b.y, mode: b.mode, anim: b.anim, look: b.look, pinned: b.pinned, state: b.session.state, kind: b.session.kind, attention: b.session.attention, pendingResume: !!b.session.pendingResume, helpers: world.minis.filter((m) => m.parent === b).map((m) => ({ mode: m.mode, x: Math.round(m.x), y: Math.round(m.y), anim: m.anim, s: m.scale })), card: b.session.card() })),
           items: world.items.map((it) => ({ kind: it.kind, x: Math.round(it.x), y: Math.round(it.y), rest: !!it.rest, carried: !!it.carrier })),
@@ -1003,6 +1142,8 @@ function startServer() {
         const b = world.get(url.searchParams.get('id')) || [...world.buddies.values()][0];
         const act = url.searchParams.get('do');
         if (act === 'detach') { world.ovDetach(); return reply(200, { ok: true }); }
+        if (act === 'tower') { toggleTower(url.searchParams.has('open') ? url.searchParams.get('open') === '1' : undefined); return reply(200, { open: world.tower.open }); }
+        if (act === 'on') { turnOn(url.searchParams.get('id')); return reply(200, { ok: true }); }
         if (act === 'usage') { await fetchUsage(); return reply(200, { at: usage.at, ok: !!usage.data, error: usage.error }); }
         if (act === 'limit') {
           // Pretend the session limit was hit; it "resets" after ?secs. Marks ?id as interrupted. No prompt is really sent.
@@ -1022,7 +1163,15 @@ function startServer() {
         else if (act === 'snack') world.giveSnack(b);
         else if (act === 'fetch') world.playFetch(b, point);
         else if (act === 'hide') world.hideFor(b, Number(url.searchParams.get('min')) || 1);
-        else if (act === 'workshop') openWorkshop(b.id);
+        else if (act === 'workshop') openWorkshop(b.id, url.searchParams.get('tab') || undefined);
+        else if (act === 'home') sendHome(b.id);
+        else if (act === 'wake') world.wake(b);
+        else if (act === 'shake') { b.queasy = Number(url.searchParams.get('n')) || 2; world.queasyShow(b); }
+        else if (act === 'meet') {
+          const o = [...world.buddies.values()].find((x) => x !== b && x.mode === 'auto' && !x.isMini);
+          if (!o) return reply(404, { error: 'needs a second buddy' });
+          world.greet(b, o, Date.now());
+        }
         else if (act === 'place') startPlacing([b.id]);
         else if (act === 'watchdialog') {
           // Hand an open file dialog (any app) to this buddy, as if its session had opened it.
@@ -1040,7 +1189,12 @@ function startServer() {
         }
         return reply(200, { id: b.id, mode: b.mode, anim: b.anim });
       }
-      if (req.method === 'POST' && url.pathname === '/quit') { reply(200, { ok: true }); setTimeout(() => app.quit(), 100); return; }
+      if (req.method === 'POST' && url.pathname === '/quit') {
+        reply(200, { ok: true });
+        if (url.searchParams.get('home') === '1') quitStarted = true; // "claude-buddy stop": a real quit
+        setTimeout(() => app.quit(), 100);
+        return;
+      }
       return reply(404, { error: 'not found' });
     } catch (err) {
       return reply(400, { error: String(err) });
@@ -1099,7 +1253,7 @@ function refreshTray() {
   if (key === trayKey) return;
   trayKey = key;
   const menu = Menu.buildFromTemplate([
-    { label: 'Claude Buddy (click the Overlord in the top-left corner for more)', enabled: false },
+    { label: 'Claude Buddy (hover the Overlord in the top-left corner for more)', enabled: false },
     ...(live.length ? live.map((b) => ({ label: `${b.session.displayName}  ·  ${b.session.card().status}`, submenu: buddyItems(b, screen.getCursorScreenPoint()) }))
       : [{ label: 'No buddies yet. Type /buddy in a Claude Code session.', enabled: false }]),
     { type: 'separator' },
@@ -1108,7 +1262,7 @@ function refreshTray() {
     { type: 'separator' },
     ...settingsItems(),
     { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() },
+    { label: 'Quit', click: quitApp },
   ]);
   tray.setContextMenu(menu);
   tray.setToolTip(`Claude Buddy (${live.length} ${live.length === 1 ? 'buddy' : 'buddies'})`);
@@ -1118,6 +1272,9 @@ function refreshTray() {
 app.whenReady().then(() => {
   loadStore();
   world.sizes = store.sizes;
+  world.tower.open = !!store.towerOpen;
+  world.tower.h = world.tower.open ? 1 : 0;
+  updateResidents();
   poses = JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'poses.json'), 'utf8'));
   Clawd.loadPoses(poses);
 
@@ -1154,6 +1311,7 @@ app.whenReady().then(() => {
   scanWindows();
   restoreBuddies();
   startKeyWatcher();
+  setTimeout(() => { if (!quitting) prepareSpareWorkshop(); }, 5000); // the first Customize opens instantly
   if (store.limit) {
     if (store.limit.test) store.limit = null;
     else world.banish({ kind: store.limit.kind, resetsAt: store.limit.resetsAt, quiet: true });

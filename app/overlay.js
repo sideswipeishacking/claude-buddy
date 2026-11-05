@@ -22,6 +22,8 @@ let items = [];
 let overlord = null;
 let covers = [];
 let doom = null; // the usage-limit banishment, while it lasts
+let tower = null; // the skyscraper (on the main display's overlay)
+let puke = null; // someone was shaken too hard
 let placing = false;
 let dialogHot = null;
 let anyHeld = false;
@@ -35,7 +37,7 @@ let lastRealMouse = 0; // Linux doesn't forward mouse moves to click-through win
 const cache = new Map();
 
 // Keep in step with BUILD in world.js.
-const BUILD = { arrive: 900, beam: 1500, holo: 2300, print: 4600, power: 5200, leave: 5700, drop: 6600, effects: 9000 };
+const BUILD = { arrive: 900, beam: 1500, holo: 2300, print: 4600, power: 5200, leave: 5700, drop: 8100, effects: 10500 };
 const CY = '#3fd0ff', CY2 = '#9eeaff';
 
 // Name tags stay readable even on tiny buddies; bubbles scale with the buddy.
@@ -587,6 +589,268 @@ function hitOverlord(mx, my) {
   return Math.hypot(mx - (o.x - origin.x), my - (o.y - origin.y)) <= 13 * o.s;
 }
 
+// ---------------------------------------------------------------- the skyscraper
+// One floor per buddy: lit when it's home, dark while it's out at work. A glass elevator on the
+// right carries buddies up and down; it all sinks into the ground when you collapse it.
+const TW = Clawd.TOWER;
+const TC = {
+  face: '#4a4458', dark: '#38333f', light: '#5d5770', slab: '#2b2733', frame: '#1d1a24', glass: '#9ad7f0', rail: '#6b7a8f',
+  car: '#c9d1d9', carDark: '#8a95a8', door: '#6b4a2e', doorOpen: '#17131d', sign: '#ffc431', plate: '#d9d4c7', ledOn: '#5fd38d', ledOff: '#6b6560',
+};
+
+/** Where everything is on this monitor (DIPs), or null if the tower isn't here. */
+function towerGeo(T) {
+  if (!T || !T.floors) return null;
+  const ts = T.ts, n = T.floors.length;
+  const bx = T.x0 - origin.x, ground = T.ground - origin.y;
+  if (bx > innerWidth || bx + TW.W * ts < 0 || ground < 0 || ground > innerHeight + 40) return null;
+  const total = (TW.LOBBY + n * TW.FLOOR + TW.ROOF) * ts;
+  const off = (1 - T.h) * (total - TW.PEEK * ts); // how far it has sunk into the ground
+  const by = ground + off; // where the building's ground line is drawn
+  const floorTop = (i) => by - (TW.LOBBY + (i + 1) * TW.FLOOR) * ts;
+  const roofTop = by - total;
+  return {
+    ts, n, bx, ground, by, off, total, roofTop, floorTop,
+    button: { x: bx + 20 * ts, y: roofTop + 2 * ts, w: 8 * ts, h: 7 * ts },
+    win: (i) => ({ x: bx + TW.WIN_X * ts, y: floorTop(i) + TW.WIN_Y * ts, w: TW.WIN_W * ts, h: TW.WIN_H * ts }),
+    sw: (i) => ({ x: bx, y: floorTop(i) + 4 * ts, w: 5 * ts, h: 7 * ts }),
+  };
+}
+
+const inBox = (r, x, y, pad = 0) => x >= r.x - pad && x <= r.x + r.w + pad && y >= r.y - pad && y <= r.y + r.h + pad;
+
+/** What part of the tower is under the pointer: tower:toggle | tower:switch:<id> | tower:room:<id> | tower. */
+function hitTower(mx, my) {
+  const T = tower, g = towerGeo(T);
+  if (!g || my > g.ground) return null;
+  if (inBox(g.button, mx, my, 2)) return 'tower:toggle';
+  const visibleTop = Math.max(g.roofTop, 0);
+  if (mx < g.bx || mx > g.bx + TW.W * g.ts || my < visibleTop) return null;
+  if (T.h < 0.98) return 'tower:toggle'; // sunk (or moving): the part that shows opens it
+  for (let i = 0; i < g.n; i++) {
+    const f = T.floors[i];
+    if (inBox(g.sw(i), mx, my, 1)) return 'tower:switch:' + f.id;
+    if (inBox(g.win(i), mx, my)) return 'tower:room:' + f.id;
+  }
+  return 'tower';
+}
+
+const roomSprite = (room, lit, ts) => memo(`room|${JSON.stringify(room || {})}|${lit ? 1 : 0}|${ts}`, () => raster(Clawd.roomPixels(room, lit), ts));
+const miniSprite = (f, body, ts) => memo(`mini|${f}|${body}|${ts}`, () => raster(Clawd.mini(f, body).pixels, ts));
+
+function drawTower(T) {
+  const g = towerGeo(T);
+  if (!g) return;
+  const { ts, bx, by, n } = g, now = performance.now();
+  // Everything below the ground line is underground (sunk), so clip it away.
+  ctx.save();
+  dev();
+  ctx.beginPath(); ctx.rect(0, 0, canvas.width, Math.round(g.ground * dpr)); ctx.clip();
+  dip();
+  const R = (x, y, w, h, c, a = 1) => { ctx.globalAlpha = a; ctx.fillStyle = c; ctx.fillRect(Math.round(bx + x * ts), Math.round(by + y * ts), w * ts, h * ts); };
+  const B = (sp, x, y) => { dev(); blit(sp, x, y, 1); dip(); }; // blit works in device pixels
+  const lobbyTop = -TW.LOBBY, top = -(TW.LOBBY + n * TW.FLOOR), roofTop = top - TW.ROOF;
+
+  // The glass elevator shaft, ground to roof.
+  R(TW.SHAFT_X, roofTop + 3, TW.SHAFT_W, -roofTop - 3, TC.glass, 0.16);
+  R(TW.SHAFT_X, roofTop + 3, 1, -roofTop - 3, TC.rail);
+  R(TW.SHAFT_X + TW.SHAFT_W - 1, roofTop + 3, 1, -roofTop - 3, TC.rail);
+  for (let y = roofTop + 6; y < 0; y += 8) R(TW.SHAFT_X + 1, y, TW.SHAFT_W - 2, 1, TC.rail, 0.45);
+  R(TW.SHAFT_X - 1, roofTop + 2, TW.SHAFT_W + 2, 2, TC.slab); // the winch housing on top
+
+  // The building: body, floor slabs, a little shading.
+  R(0, roofTop + 8, TW.BODY, -roofTop - 8, TC.face);
+  R(0, roofTop + 8, 1, -roofTop - 8, TC.light);
+  R(TW.BODY - 1, roofTop + 8, 1, -roofTop - 8, TC.dark);
+
+  // Floors, bottom up.
+  for (let i = 0; i < n; i++) {
+    const f = T.floors[i], y0 = -(TW.LOBBY + (i + 1) * TW.FLOOR);
+    R(0, y0 + TW.FLOOR - 2, TW.BODY, 2, TC.slab);
+    R(TW.WIN_X - 1, y0 + TW.WIN_Y - 1, TW.WIN_W + 2, TW.WIN_H + 2, TC.frame);
+    B(roomSprite(f.room, f.lit, ts), bx + TW.WIN_X * ts, by + (y0 + TW.WIN_Y) * ts);
+    // Its figure: resting in the room, or walking between the room and the elevator.
+    if (f.mini !== null && f.mini !== undefined) {
+      const k = f.mini, x = TW.WIN_X + 9 + k * (TW.SHAFT_X + 4 - TW.WIN_X - 9), feet = y0 + TW.WIN_Y + TW.WIN_H - 2;
+      const walking = k > 0 && k < 1, fr = walking ? Math.floor(now / 140) % 2 : Math.floor(now / 900) % 2;
+      const inRoom = x < TW.WIN_X + TW.WIN_W - 2;
+      if (inRoom || x > TW.SHAFT_X + 1) {
+        ctx.save(); ctx.beginPath();
+        const clipX = inRoom ? TW.WIN_X : TW.SHAFT_X, clipW = inRoom ? TW.WIN_W : TW.SHAFT_W;
+        ctx.rect(bx + clipX * ts, by + (y0 + TW.WIN_Y) * ts, clipW * ts, TW.WIN_H * ts); ctx.clip();
+        B(miniSprite(fr, f.body, ts), bx + x * ts, by + feet * ts);
+        ctx.restore(); dip();
+      }
+    }
+    // A warm glow spills out of lit windows; dark ones get a faint reflection.
+    if (f.lit) R(TW.WIN_X, y0 + TW.WIN_Y + TW.WIN_H + 1, TW.WIN_W, 1, '#ffe7a0', 0.35);
+    // The light switch: up (green) while the buddy is on, down while it's home.
+    R(TW.SWITCH_X, y0 + 5, 3, 5, TC.plate);
+    R(TW.SWITCH_X + 1, y0 + (f.on ? 6 : 7), 1, 2, '#3b3743');
+    R(TW.SWITCH_X + 1, y0 + 4, 1, 1, f.on ? TC.ledOn : TC.ledOff, f.busy && Math.floor(now / 250) % 2 ? 0.3 : 1);
+    if (hoverId === 'tower:switch:' + f.id || hoverId === 'tower:room:' + f.id) {
+      const r = hoverId.startsWith('tower:switch') ? g.sw(i) : g.win(i);
+      brackets(r.x - 2, r.y - 2, r.w + 4, r.h + 4, 4 + ts, 2, '#ffc431', 0.95);
+      dip();
+    }
+  }
+
+  // Lobby: door, sign, glass front.
+  R(0, lobbyTop, TW.BODY, TW.LOBBY, TC.dark);
+  R(0, lobbyTop, TW.BODY, 1, TC.slab);
+  R(TW.DOOR_X - 1, -TW.DOOR_H - 1, TW.DOOR_W + 2, TW.DOOR_H + 1, TC.frame);
+  if (T.door) R(TW.DOOR_X, -TW.DOOR_H, TW.DOOR_W, TW.DOOR_H, TC.doorOpen);
+  else {
+    R(TW.DOOR_X, -TW.DOOR_H, TW.DOOR_W, TW.DOOR_H, TC.door);
+    R(TW.DOOR_X + TW.DOOR_W / 2 - 1, -TW.DOOR_H, 1, TW.DOOR_H, TC.frame);
+    R(TW.DOOR_X + 2, -TW.DOOR_H / 2, 1, 1, TC.sign); R(TW.DOOR_X + TW.DOOR_W - 3, -TW.DOOR_H / 2, 1, 1, TC.sign);
+  }
+  R(15, -9, 13, 8, TC.frame);
+  R(16, -8, 11, 6, TC.glass, 0.55);
+  R(17, -7, 3, 1, '#ffffff', 0.6);
+  // "HQ" over the lobby window.
+  const sign = textSprite('HQ', ts, TC.sign);
+  B(sign, bx + 21.5 * ts - sign.w / 2 - sign.ox, by + (lobbyTop + 1) * ts - sign.oy);
+  if (T.hidden > 0) { const more = textSprite(`+${T.hidden}`, ts, '#f6e9df'); B(more, bx + 11 * ts - more.ox, by + (roofTop + 3) * ts - more.oy); }
+
+  // Walking between the lobby door and the elevator.
+  if (T.lobby) {
+    const k = T.lobby.dir === 'in' ? T.lobby.k : 1 - T.lobby.k;
+    const x = TW.DOOR_X + TW.DOOR_W / 2 + k * (TW.SHAFT_X + 4 - TW.DOOR_X - TW.DOOR_W / 2);
+    B(miniSprite(Math.floor(now / 140) % 2, T.lobby.body, ts), bx + x * ts, by - 1 * ts);
+  }
+
+  // The elevator car.
+  // Its floor lines up with the rooms' floors (and with the lobby's at the bottom).
+  const f = T.car.f, carBottom = f >= 0 ? -(TW.LOBBY + f * TW.FLOOR) - 5 : -1 + (f + 1) * (-TW.LOBBY - 4), carTop = carBottom - 11;
+  R(TW.SHAFT_X + TW.SHAFT_W / 2, roofTop + 4, 1, carTop - roofTop - 4, '#2f2f38', 0.8); // cable
+  R(TW.SHAFT_X, carTop, TW.SHAFT_W, 11, TC.carDark);
+  R(TW.SHAFT_X + 1, carTop + 1, TW.SHAFT_W - 2, 9, T.car.door ? '#3b3546' : TC.car);
+  R(TW.SHAFT_X, carTop, TW.SHAFT_W, 1, '#ffffff', 0.5);
+  if (T.car.rider) B(miniSprite(Math.floor(now / 500) % 2, T.car.rider, ts), bx + (TW.SHAFT_X + 4) * ts, by + (carBottom - 1) * ts);
+  else if (!T.car.door) R(TW.SHAFT_X + 2, carTop + 2, TW.SHAFT_W - 4, 3, TC.glass, 0.6);
+
+  // Roof: parapet, antenna with a blinking light, and the collapse button.
+  R(-1, roofTop + 8, TW.BODY + 2, 2, TC.slab);
+  R(8, roofTop + 1, 1, 7, '#8d857e');
+  R(6, roofTop + 7, 5, 1, '#8d857e');
+  R(7, roofTop, 3, 1, Math.floor(now / 700) % 2 ? '#ff5a4e' : '#7a2a24');
+  const b = g.button, hot = hoverId === 'tower:toggle';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#000'; ctx.fillRect(Math.round(b.x - ts), Math.round(b.y - ts), b.w + 2 * ts, b.h + 2 * ts);
+  ctx.fillStyle = hot ? '#3fd0ff' : '#ffc431'; ctx.fillRect(Math.round(b.x), Math.round(b.y), b.w, b.h);
+  ctx.fillStyle = hot ? '#9eeaff' : '#ffe7a0'; ctx.fillRect(Math.round(b.x), Math.round(b.y), b.w, ts);
+  // ▼ collapses it, ▲ brings it up.
+  const up = T.h < 0.5;
+  ctx.fillStyle = '#1a1408';
+  for (let r = 0; r < 3; r++) {
+    const w = (up ? 1 + r * 2 : 5 - r * 2) * ts, y = b.y + (2 + r) * ts;
+    ctx.fillRect(Math.round(b.x + b.w / 2 - w / 2), Math.round(y), w, ts);
+  }
+  ctx.restore();
+  dev();
+
+  // Hovering a floor: its name and what a click does.
+  const hid = hoverId && hoverId.startsWith('tower:') ? hoverId.split(':') : null;
+  if (hid && (hid[1] === 'switch' || hid[1] === 'room')) {
+    const i = T.floors.findIndex((x) => x.id === hid[2]);
+    const fl = T.floors[i];
+    if (fl) {
+      const ty = g.floorTop(i) + 2 * ts, tx = bx + TW.W * ts + 8;
+      const what = hid[1] === 'room' ? 'CLICK TO DECORATE' : fl.busy ? 'ON THE WAY...' : fl.on ? 'CLICK: SEND HOME' : 'CLICK: GO TO WORK';
+      pixelText(`${fl.name} - ${fl.status}`.toUpperCase().slice(0, 34), tx, ty, 2, '#f6e9df', 1, '#1f1e1d');
+      pixelText(what, tx, ty + 16, 2, hid[1] === 'room' ? '#9eeaff' : '#ffc431', 1, '#1f1e1d');
+    }
+  } else if (hoverId === 'tower:toggle') {
+    const ty = Math.max(8, g.button.y), tx = bx + TW.W * ts + 8;
+    pixelText(T.h < 0.5 ? 'OPEN THE SKYSCRAPER' : 'TUCK IT AWAY', tx, ty, 2, '#f6e9df', 1, '#1f1e1d');
+  }
+}
+
+// ---------------------------------------------------------------- being sick
+function drawPuddles(P) {
+  for (const q of P.puddles) {
+    const k = q.s, x = q.x - origin.x, y = q.y - origin.y, rows = Math.min(3, 1 + Math.floor(q.v / 8));
+    const w = Math.max(3, Math.round(q.w / k));
+    const sink = q.sink * (rows + 1) * k;
+    ctx.save();
+    dev(); ctx.beginPath(); ctx.rect(0, 0, canvas.width, Math.round(y * dpr)); ctx.clip(); dip();
+    ctx.globalAlpha = 1 - q.sink * 0.5;
+    for (let r = 0; r < rows; r++) {
+      const inset = r === 0 ? 0 : r === 1 ? 2 : 5, rw = w - inset * 2;
+      if (rw <= 0) continue;
+      ctx.fillStyle = r === rows - 1 ? '#c8d96f' : '#8db22c';
+      ctx.fillRect(Math.round(x - (rw * k) / 2), Math.round(y - (r + 1) * k + sink), rw * k, k);
+    }
+    // Lumps.
+    ctx.fillStyle = '#6f8f1f';
+    for (let i = 0; i < Math.min(6, Math.floor(w / 5)); i++) {
+      const lx = Math.floor(hash(q.seed + i) * (w - 2)) - Math.floor(w / 2) + 1;
+      ctx.fillRect(Math.round(x + lx * k), Math.round(y - k + sink), k, k);
+    }
+    // The odd bubble.
+    if (Math.floor(performance.now() / 400 + q.seed) % 5 === 0) {
+      ctx.fillStyle = '#e4f0a8';
+      ctx.fillRect(Math.round(x + (hash(q.seed + Math.floor(performance.now() / 2000)) - 0.5) * (w - 2) * k), Math.round(y - (rows + 1) * k + sink), k, k);
+    }
+    ctx.restore();
+  }
+  dev();
+}
+
+function drawDrops(P) {
+  dip();
+  for (const d of P.drops) {
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = d.c;
+    ctx.fillRect(Math.round(d.x - origin.x - d.s), Math.round(d.y - origin.y - d.s), 2 * d.s, 2 * d.s);
+  }
+  dev();
+}
+
+// ---------------------------------------------------------------- speech bubbles
+function wrapWords(text, max = 14) {
+  const lines = [];
+  let cur = '';
+  for (const w of String(text).split(' ')) {
+    if (!cur) cur = w;
+    else if ((cur + ' ' + w).length <= max) cur += ' ' + w;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines.slice(0, 3);
+}
+
+/** A white speech bubble with the text in the pixel font; its tail tip is at (tx, h + 2). */
+function speechSprite(text, k) {
+  return memo(`say|${text}|${k}`, () => {
+    const lines = wrapWords(text), ink = '#2f2f38', paper = '#fffaf0', px = [];
+    const w = Math.max(...lines.map((l) => l.length * 4 - 1)) + 6, h = lines.length * 6 + 4;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if ((x === 0 || x === w - 1) && (y === 0 || y === h - 1)) continue; // rounded corners
+      px.push({ x, y, c: x === 0 || y === 0 || x === w - 1 || y === h - 1 ? ink : paper });
+    }
+    const tx = Math.max(2, Math.floor(w / 2) - 2);
+    px.push({ x: tx + 1, y: h - 1, c: paper }, { x: tx, y: h, c: ink }, { x: tx + 1, y: h, c: paper }, { x: tx + 2, y: h, c: ink }, { x: tx, y: h + 1, c: ink }, { x: tx + 1, y: h + 1, c: ink }, { x: tx, y: h + 2, c: ink });
+    lines.forEach((l, i) => {
+      const ox = Math.floor((w - (l.length * 4 - 1)) / 2);
+      for (const p of Clawd.text(l).pixels) px.push({ x: ox + p.x, y: 3 + i * 6 + p.y, c: ink });
+    });
+    const r = raster(px, k);
+    r.tipX = tx; r.tipY = h + 3;
+    return r;
+  });
+}
+
+function drawSpeech(b, sp, x, y) {
+  const k = tagScale(b.s), bs = speechSprite(b.say, k);
+  const headX = x, headTop = y + sp.oy;
+  let left = headX - bs.tipX * bs.u, topY = headTop - bs.tipY * bs.u - 2;
+  left = clamp(left, 4, innerWidth - bs.w - 4);
+  topY = Math.max(4, topY);
+  blit(bs, left - bs.ox, topY - bs.oy, b.alpha);
+}
+
 // ---------------------------------------------------------------- the main loop
 function draw() {
   requestAnimationFrame(draw);
@@ -626,6 +890,9 @@ function draw() {
   if (doom) { drawVignette(doom, dt); drawPit(doom, performance.now(), false); }
   canvas.style.transform = doom && doom.phase === 'alert' ? `translate(${Math.round((Math.random() - 0.5) * 8)}px, ${Math.round((Math.random() - 0.5) * 6)}px)` : '';
 
+  if (tower) drawTower(tower);
+  if (puke) drawPuddles(puke);
+
   for (const b of buddies) if (b.birth && b.birth.t + elapsed < BUILD.drop + 1200) drawBuildBack(b, elapsed);
 
   for (const it of items) blit(itemSprite(it.kind, it.s), it.x - origin.x, it.y - origin.y, it.a);
@@ -658,7 +925,8 @@ function draw() {
       dev();
     }
 
-    if (b.bubble) {
+    if (b.say) drawSpeech(b, sp, x, y);
+    else if (b.bubble) {
       const bs = bubbleSprite(b.bubble, b.s);
       const bob = b.bubble === '✓' ? 0 : Math.round(Math.sin(performance.now() / 160) * 2);
       const bx = b.o === 'floor' ? x + Math.max(sp.head.r * sp.u - 6, 4.5 * sp.u) : x + sp.ox + sp.w - 2;
@@ -682,6 +950,7 @@ function draw() {
   }
 
   for (const b of buddies) if (b.birth && b.birth.t + elapsed < BUILD.effects) drawBuildFront(b, elapsed);
+  if (puke) drawDrops(puke);
 
   if (doom) { drawPit(doom, performance.now(), true); drawBeams(doom, dt); }
   if (overlord) drawOverlord(overlord, elapsed);
@@ -808,11 +1077,24 @@ function resetsText(iso) {
   return `resets ${new Date(at).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`;
 }
 
+function ovButton(host, label, act, opts = {}) {
+  const b = document.createElement('button');
+  b.className = 'ovbtn' + (opts.cls ? ' ' + opts.cls : '') + (opts.on === true ? ' on' : opts.on === false ? ' off' : '');
+  b.dataset.act = act;
+  if (opts.value !== undefined) b.dataset.value = opts.value;
+  if (opts.on !== undefined) { const i = document.createElement('i'); b.append(i); }
+  b.append(document.createTextNode(label));
+  if (opts.disabled) b.disabled = true;
+  host.append(b);
+  return b;
+}
+
+let optKey = '';
 function updateOvCard() {
   const o = overlord;
-  if (hoverId !== 'overlord' || !o || !o.card) { ovcard.classList.add('hidden'); ovKey = ''; return; }
+  if (hoverId !== 'overlord' || !o || !o.card) { ovcard.classList.add('hidden'); ovKey = ''; optKey = ''; return; }
   const c = o.card;
-  const key = JSON.stringify(c) + Math.floor(Date.now() / 30000);
+  const key = JSON.stringify([c.usage, c.error, c.limit]) + Math.floor(Date.now() / 30000);
   if (key !== ovKey) {
     ovKey = key;
     const usage = ovcard.querySelector('.usage');
@@ -844,36 +1126,42 @@ function updateOvCard() {
     const lim = c.limit ? `${c.limit.kind === 'week' ? 'Weekly' : 'Session'} limit reached: buddies banished until ${clockTime(c.limit.resetsAt).toLowerCase() || 'it resets'}${c.limit.resetsAt ? ` (${resetsText(c.limit.resetsAt)})` : ''}.${c.limit.interrupted ? ` ${c.limit.interrupted} will be told to resume.` : ''}` : '';
     err.textContent = lim || (c.error ? `Usage: ${c.error}` : '');
     err.classList.toggle('empty', !lim && !c.error);
-    const list = ovcard.querySelector('.blist');
-    list.textContent = '';
-    const head = document.createElement('div');
-    head.className = 'bhead';
-    head.textContent = `Buddies · ${c.buddies.filter((x) => x.on).length} on / ${c.total}`;
-    list.append(head);
-    if (!c.buddies.length) {
-      const none = document.createElement('div');
-      none.className = 'usub';
-      none.textContent = 'None yet. Type /buddy in a Claude Code session.';
-      list.append(none);
-    }
-    for (const bd of c.buddies) {
+  }
+  // Options (what used to be its menu). Rebuilt only when something changes, so clicks land.
+  const k2 = JSON.stringify([c.counts, c.settings]);
+  if (k2 !== optKey) {
+    optKey = k2;
+    const n = c.counts || {}, st = c.settings || {};
+    ovcard.querySelector('.ovsum').textContent = `${n.out || 0} out · ${n.home || 0} at home${n.sleeping ? ` · ${n.sleeping} asleep` : ''}`;
+    const acts = ovcard.querySelector('.ovacts');
+    acts.textContent = '';
+    ovButton(acts, 'Gather everyone', 'gather', { disabled: !n.out });
+    ovButton(acts, 'Wake everyone', 'wake', { disabled: !n.sleeping });
+    ovButton(acts, st.tower ? 'Tuck the skyscraper away' : 'Show the skyscraper', 'tower');
+    ovButton(acts, 'Summon a demo buddy', 'demo');
+    ovButton(acts, 'Animation gallery', 'gallery');
+    const sets = ovcard.querySelector('.ovsets');
+    sets.textContent = '';
+    ovButton(sets, 'Sound effects', 'sound', { on: st.sound });
+    ovButton(sets, st.mac ? 'Type along (Input Monitoring)' : 'Type along when I type', 'typing', { on: st.typing });
+    ovButton(sets, 'Buddy for every session', 'auto', { on: st.auto });
+    ovButton(sets, 'Start at login', 'login', { on: st.login });
+    ovButton(sets, 'Hide buddies', 'hidden', { on: st.hidden });
+    const sizes = ovcard.querySelector('.ovsizes');
+    sizes.textContent = '';
+    for (const [which, label] of [['internal', 'Laptop screen size'], ['external', 'Other monitors size']]) {
       const row = document.createElement('div');
-      row.className = `brow ${bd.on ? 'on' : 'off'}`;
-      const dot = document.createElement('i'); dot.className = 'dot';
-      const sw = document.createElement('i'); sw.className = 'sw'; sw.style.background = bd.body;
-      const nm = document.createElement('span'); nm.className = 'bn'; nm.textContent = bd.name;
-      const st = document.createElement('span'); st.className = 'bs'; st.textContent = bd.on ? bd.status : 'off';
-      row.append(dot, sw, nm, st);
-      list.append(row);
-    }
-    if (c.total > c.buddies.length) {
-      const more = document.createElement('div');
-      more.className = 'usub';
-      more.textContent = `+${c.total - c.buddies.length} more in the menu`;
-      list.append(more);
+      row.className = 'ovsize';
+      const l = document.createElement('span'); l.textContent = label;
+      row.append(l);
+      ovButton(row, '−', 'size', { value: `${which}:-1`, cls: 'step', disabled: st[which] <= 1 });
+      const v = document.createElement('b'); v.textContent = st[which];
+      row.append(v);
+      ovButton(row, '+', 'size', { value: `${which}:1`, cls: 'step', disabled: st[which] >= 12 });
+      sizes.append(row);
     }
   }
-  const h = ovcard.offsetHeight || 220, w = 320;
+  const h = ovcard.offsetHeight || 420, w = 320;
   let left, top;
   if (o.mode === 'fused') {
     const g = ovGeom(o);
@@ -938,8 +1226,9 @@ const inside = (el, x, y) => { if (!el || el.classList.contains('hidden')) retur
 
 /** What's under the pointer: a buddy id, 'overlord', 'dialog', or nothing. */
 function whatsAt(mx, my) {
-  return hitTest(mx, my) || (inDialogHot(mx, my) ? 'dialog' : null) || (hitOverlord(mx, my) ? 'overlord' : null);
+  return hitTest(mx, my) || (inDialogHot(mx, my) ? 'dialog' : null) || (hitOverlord(mx, my) ? 'overlord' : null) || hitTower(mx, my);
 }
+const isBuddyId = (id) => !!id && id !== 'overlord' && id !== 'dialog' && !id.startsWith('tower');
 
 // The cards and permission buttons count as part of what they belong to, with
 // a short grace period so you can move the mouse onto them.
@@ -956,12 +1245,13 @@ function updateHover(mx, my) {
 function setHover(id) {
   if (id === hoverId) return;
   hoverId = id;
-  document.body.classList.toggle('grab', !!id && id !== 'overlord' && id !== 'dialog');
-  document.body.classList.toggle('point', id === 'overlord' || id === 'dialog');
+  document.body.classList.toggle('grab', isBuddyId(id));
+  document.body.classList.toggle('point', id === 'dialog' || (!!id && id.startsWith('tower:')));
   buddy.send('hover', id);
 }
 
 const onUi = (e) => !!(e.target.closest && e.target.closest('.card, .perm-float'));
+// (the Overlord's card is a .card too, so its buttons never start a grab)
 
 function endGrab(e) {
   if (!grabbing) return;
@@ -981,15 +1271,15 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mouseleave', () => { lastMouse = null; if (!grabbing) { clearTimeout(leaveTimer); leaveTimer = null; setHover(null); } });
 window.addEventListener('click', (e) => {
   const btn = e.target.closest && e.target.closest('.pbtn');
-  if (btn) buddy.send('decide', { id: btn.dataset.id, decision: btn.dataset.decision });
-  else if (e.target.closest && e.target.closest('#ovcard')) buddy.send('overlord-click');
+  if (btn) { buddy.send('decide', { id: btn.dataset.id, decision: btn.dataset.decision }); return; }
+  const ob = e.target.closest && e.target.closest('.ovbtn');
+  if (ob && !ob.disabled) { buddy.send('ov-action', { act: ob.dataset.act, value: ob.dataset.value }); optKey = ''; }
 });
 window.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   if (placing) { buddy.send('place-cancel'); return; }
-  const id = whatsAt(e.clientX, e.clientY) || (onUi(e) ? hoverId : null) || (inside(ovcard, e.clientX, e.clientY) ? 'overlord' : null);
-  if (id === 'overlord') buddy.send('overlord-click');
-  else if (id && id !== 'dialog') buddy.send('context', id);
+  const id = whatsAt(e.clientX, e.clientY) || (onUi(e) ? hoverId : null);
+  if (isBuddyId(id)) buddy.send('context', id); // the Overlord and the skyscraper have no menus: hover / click them
 });
 window.addEventListener('pointerdown', (e) => {
   if (placing) {
@@ -1001,8 +1291,13 @@ window.addEventListener('pointerdown', (e) => {
   if (grabbing) endGrab(); // a grab whose release we never saw
   const id = whatsAt(e.clientX, e.clientY);
   if (!id) return;
-  if (id === 'overlord') { buddy.send('overlord-click'); return; }
+  if (id === 'overlord') return; // its options are on its hover panel
   if (id === 'dialog') { buddy.send('dialog-open-click'); return; }
+  if (id.startsWith('tower')) {
+    const [, act, bid] = id.split(':');
+    if (act) buddy.send('tower', { act, id: bid });
+    return;
+  }
   grabbing = true;
   grabAt = performance.now();
   grabPointer = e.pointerId;
@@ -1071,6 +1366,12 @@ const SOUNDS = {
   sizzle: () => { for (let i = 0; i < 6; i++) tone(2400 + Math.random() * 1600, i * 0.04, 0.03, 'square', 0.015); },
   rise: () => [196, 262, 330, 392, 523].forEach((f, i) => tone(f, i * 0.12, 0.2, 'triangle', 0.05)),
   stamp: () => { tone(160, 0, 0.09, 'square', 0.06, -60); tone(880, 0.1, 0.12, 'triangle', 0.05); },
+  chat: () => { const f = 480 + Math.random() * 380; tone(f, 0, 0.045, 'square', 0.022); tone(f * 1.25, 0.06, 0.045, 'square', 0.022); tone(f * 0.9, 0.12, 0.05, 'square', 0.022); },
+  clap: () => { for (let i = 0; i < 3; i++) tone(1700 + Math.random() * 900, i * 0.02, 0.03, 'square', 0.03); },
+  door: () => { tone(330, 0, 0.08, 'triangle', 0.04); tone(440, 0.09, 0.1, 'triangle', 0.04); },
+  dizzy: () => [880, 740, 880, 740, 660].forEach((f, i) => tone(f, i * 0.09, 0.08, 'triangle', 0.035)),
+  gulp: () => tone(260, 0, 0.12, 'square', 0.04, -120),
+  blech: () => { tone(160, 0, 0.5, 'sawtooth', 0.05, -60); for (let i = 0; i < 5; i++) tone(90 + Math.random() * 60, 0.1 + i * 0.08, 0.06, 'square', 0.03); },
 };
 
 // ---------------------------------------------------------------- wiring
@@ -1089,6 +1390,8 @@ buddy.on('frame', (data) => {
   overlord = data.overlord || null;
   covers = data.covers || [];
   doom = data.doom || null;
+  tower = data.tower || null;
+  puke = data.puke && (data.puke.drops.length || data.puke.puddles.length) ? data.puke : null;
   dialogHot = data.dialogHot || null;
   anyHeld = !!data.anyHeld;
   if (placing !== !!data.placing) { placing = !!data.placing; document.body.classList.toggle('placing', placing); }
@@ -1100,7 +1403,7 @@ buddy.on('frame', (data) => {
   }
   // Watchdog: the world dropped the buddy (button released somewhere we didn't see).
   if (grabbing && !anyHeld && receivedAt - grabAt > 600) endGrab();
-  if (hoverId && hoverId !== 'overlord' && hoverId !== 'dialog' && !buddies.some((b) => b.id === hoverId) && !grabbing) setHover(null);
+  if (isBuddyId(hoverId) && !buddies.some((b) => b.id === hoverId) && !grabbing) setHover(null);
 });
 buddy.on('sound', (name) => { try { SOUNDS[name]?.(); } catch { /* audio unavailable */ } });
-buddy.on('debugHover', (id) => { hoverId = id; cardKey = ''; ovKey = ''; lastMouse = null; });
+buddy.on('debugHover', (id) => { hoverId = id; cardKey = ''; ovKey = ''; optKey = ''; lastMouse = null; });

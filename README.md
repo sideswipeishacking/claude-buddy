@@ -26,8 +26,10 @@ Type `/buddy` in a Claude Code session and a little pixel creature gets built on
 - **It gets your attention for the right things.** A `!` for permission prompts, a `?` for questions, a `✓` when Claude is done. You can answer permission prompts with **Allow / Always / Deny** buttons right on the buddy.
 - **Click it to jump back.** Clicking a buddy brings its session to the front: the right terminal, IDE window or Claude app conversation.
 - **Feed it files.** Drag files onto a buddy and it eats them, and they land in that session's prompt box.
-- **The Overlord.** A watchful eye in the corner of your screen that builds the buddies, shows your **session and weekly usage limits**, and keeps a roster of every buddy you've made. It has opinions about usage limits.
-- **Make it yours.** An RPG-style Buddy Workshop with 28 hats, wands, capes, wings, colours and more. Names, looks and settings are remembered per session.
+- **The Overlord.** A watchful eye in the corner of your screen that builds new buddies, shows your **session and weekly usage limits**, and keeps every option one hover away. It has opinions about usage limits.
+- **The skyscraper.** Every buddy gets its own floor in a little tower at the bottom-left of your screen. The window lights up when it's home; flip the switch next to it to send it to work (or call it home). It takes the elevator, of course. Pop the tower up when you want it and tuck it into the ground when you don't.
+- **A life between jobs.** Idle buddies go looking for each other and chat in speech bubbles about what they're working on. Play fetch (they never give up on the ball), wake a sleepy one with a little shake… just don't overdo the shaking.
+- **Make it yours.** An RPG-style Buddy Workshop with 46 hats, wands, umbrellas, capes, jetpacks, colours and more, plus a room to decorate. Names, looks and settings are remembered per session.
 - **Polite.** Stays out of the way of fullscreen apps (unless something important happens), never sends anything anywhere except the usage check you'd expect, and costs no tokens: `/buddy` commands never reach the model.
 
 ## Quick start
@@ -86,7 +88,7 @@ Windows is the most battle-tested platform; macOS and Linux support is new, so r
 | Guide | What's in it |
 | --- | --- |
 | [Installation](docs/installation.md) | Every way to install, update and uninstall, per operating system |
-| [Getting started](docs/getting-started.md) | A tour: your first buddy, the Overlord, the Workshop, permissions, files |
+| [Getting started](docs/getting-started.md) | A tour: your first buddy, the Overlord, the skyscraper, the Workshop, permissions, files |
 | [Commands](docs/commands.md) | `/buddy …` reference, the menus, the `claude-buddy` CLI |
 | [Tips & tricks](docs/tips.md) | Small things that make it nicer to live with |
 | [Platforms](docs/platforms.md) | What works where, and the permissions macOS and Linux need |

@@ -17,17 +17,22 @@ const G = 2400; // gravity, px/s^2
 const BASE_SCALE = 4; // speeds below are tuned for this pixel scale
 const SPEED = { walk: 55, run: 150, sneak: 38, pace: 32, climb: 36, ceil: 30 };
 const SLEEP_AFTER = 3 * 60e3;
-const GREET_COOLDOWN = 90e3;
+const GREET_COOLDOWN = 25e3; // friends meet up often when they have nothing to do
 const STALE_AFTER = 12 * 3600e3;
 const TYPING_HOLD = 1300;
 const PANCAKE_MS = 2600;
 // The Overlord builds each new buddy: fly in, scan beam, hologram, 3D-print, power on.
-const BUILD = { arrive: 900, beam: 1500, holo: 2300, print: 4600, power: 5200, leave: 5700, drop: 6600, effects: 9000 };
+const BUILD = { arrive: 900, beam: 1500, holo: 2300, print: 4600, power: 5200, leave: 5700, drop: 8100, effects: 10500 };
 // The usage limit: alarm, the Overlord arrives, the pit opens, each buddy is dragged in, the pit seals.
 const DOOM = { alert: 2600, arrive: 1600, portal: 1200, grab: 1150, seal: 1400 };
 // When it resets: the Overlord returns, the pit opens, each buddy is flung back up, then reviewed one by one.
 const RISE = { arrive: 1500, portal: 1100, rise: 750, review: 1000, close: 1200 };
 const LONG_WAIT_KINDS = new Set(['terminal', 'lifting', 'testing', 'servers']);
+// Shaking a held buddy: direction changes add up (and wear off); enough of them and it gets dizzy, then sick.
+const SHAKE = { wake: 2, dizzy: 7, sick: 20, decay: 1.6 };
+const PUKE = ['#a4c639', '#8db22c', '#c8d96f', '#6f8f1f'];
+const TW = Clawd.TOWER; // the skyscraper's layout, in art pixels
+const OFFSTAGE = new Set(['birth', 'script', 'hell', 'doom', 'ride', 'enter']); // not for grabbing, feeding or errands
 
 const LOOK_DEFAULTS = {
   hat: null, hand: null, face: null, neck: null, back: null, body: Clawd.COL.body, eye: Clawd.COL.eye, size: 1,
@@ -60,6 +65,48 @@ function mergeSpans(list) {
     else merged.push({ ...f });
   }
   return merged;
+}
+
+// ---------------------------------------------------------------- small talk
+// Lines are drawn in the 3x5 pixel font, so they stay short and upper-case.
+const FONT_OK = new Set(Object.keys(Clawd.FONT));
+const say = (str, max = 22) => [...String(str || '').toUpperCase()].filter((c) => FONT_OK.has(c)).join('').replace(/\s+/g, ' ').trim().slice(0, max).trim();
+const projectOf = (b) => say(b.session.name, 14) || 'A SECRET PROJECT';
+const sourceOf = (b) => say(b.session.source, 12) || 'THE TERMINAL';
+const hatName = (h) => say(h, 12);
+
+function pickScene(a, b) {
+  const pa = projectOf(a), pb = projectOf(b);
+  const done = (x) => x.session.plan.filter((p) => p.status === 'completed').length;
+  const pct = (x) => (x.session.context ? x.session.context.pct : 0);
+  const scenes = [
+    () => [[0, 'WHAT ARE YOU ON?'], [1, `I'M ON ${pb}`], [0, pick([`NICE! I'M ON ${pa}`, `COOL. ${pa} HERE`])],
+      [1, pick(["HOW'S IT GOING?", 'ANY BUGS?', 'SHIPPED IT YET?'])],
+      [0, pick(['TESTS ARE GREEN :)', 'ALMOST DONE!', 'SO MANY FILES...', 'IT COMPILES!', done(a) ? `${done(a)} TASKS DONE!` : 'JUST GETTING STARTED'])],
+      ['both', '', 'cheer']],
+    () => [[0, `HOW'S ${sourceOf(b)}?`], [1, pick(['COZY!', 'LOTS OF TABS', 'NEED MORE RAM', 'NEVER LEAVING'])], ['both', '', 'cheer']],
+    () => [[0, `I'M AT ${pct(a) || Math.floor(rand(20, 70))}% CONTEXT`], [1, pick(['TIME TO COMPACT!', 'SAME. NAP TIME?', 'RESPECT.', 'LIGHTWEIGHT :P'])], ['both', '', 'cheer']],
+    () => [[0, 'HIGH FIVE!'], ['both', ['YEAH!', 'YEAH!'], 'cheer', 'clap']],
+    () => {
+      const hands = ['ROCK', 'PAPER', 'SCISSORS'], x = Math.floor(rand(0, 3)), y = Math.floor(rand(0, 3));
+      const winner = x === y ? -1 : (x - y + 3) % 3 === 1 ? 0 : 1;
+      return [[0, 'ROCK, PAPER...'], [1, 'SCISSORS!'], ['both', [hands[x] + '!', hands[y] + '!'], 'alert', 'clap'],
+        winner < 0 ? ['both', ['TIE?!', 'AGAIN!'], 'confused'] : [winner, 'I WIN!', 'cheer', 'done'],
+        ...(winner < 0 ? [] : [[1 - winner, pick(['NOOO', 'BEST OF 3?', 'RIGGED!']), 'sadBase']])];
+    },
+    () => (b.look.hat ? [[0, `NICE ${hatName(b.look.hat)}!`], [1, 'THANKS! :)', 'love'], ['both', '', 'cheer']] : null),
+    () => [[0, 'PSST... THE OVERLORD'], [1, "IT'S WATCHING US", 'startled'], [0, 'ACT NATURAL...'], ['both', '', 'idle']],
+    () => [[0, 'WANT A COOKIE?'], [1, 'YES PLEASE!'], ['both', '', 'snack', 'munch']],
+    () => [[0, 'DANCE PARTY!'], ['both', '', 'confetti', 'done'], ['both', '', 'celebrate']],
+    () => [[0, 'TABS OR SPACES?'], [1, 'SPACES!'], [0, "WE CAN'T BE FRIENDS"], [1, '...', 'sadBase'], [0, 'JUST KIDDING :)'], ['both', '', 'love']],
+    () => [[0, 'MAKE ME A SANDWICH'], [1, 'NO.'], [0, 'SUDO MAKE ME ONE'], [1, 'OKAY.', 'cheer']],
+    () => [[0, 'IT WORKS ON MY MACHINE'], [1, "THEN WE SHIP YOUR MACHINE"], ['both', ['HAHA', 'HAHA'], 'cheer']],
+    () => [[0, 'I FOUND A BUG'], [1, 'DID YOU SQUASH IT?'], [0, "IT'S A FEATURE NOW"], ['both', '', 'cheer']],
+    () => [[0, 'HOW MANY TOKENS?'], [1, 'ALL OF THEM'], [0, 'LEGEND.', 'love']],
+    () => [[0, 'GIT PUSH --FORCE?'], [1, 'NOT ON MAIN!', 'startled'], [0, '...TOO LATE', 'sadBase']],
+  ];
+  for (let i = 0; i < 6; i++) { const s = pick(scenes)(); if (s) return s; }
+  return scenes[0]();
 }
 
 class Buddy {
@@ -135,6 +182,9 @@ class World {
     // The Overlord lives fused into the top edge of the screens and builds the buddies.
     this.doom = null; // the usage-limit banishment, while it lasts
     this.ov = { present: false, mode: 'fused', x: 0, y: 0, tw: null, hovered: false, holdUntil: 0, peek: null, nextPeek: 0, lookX: 0, lookY: 0, blink: 0, build: null };
+    // The skyscraper: one floor per buddy. h is how far it has risen out of the ground (0..1).
+    this.tower = { open: false, h: 0, holdUntil: 0, residents: [], rides: [], car: { f: -1 } };
+    this.puke = { drops: [], puddles: [] };
   }
 
   sound(b, name) {
@@ -296,7 +346,10 @@ class World {
     b.leaving = true;
     b.task = null;
     b.hide = null;
-    if (!goodbye || b.mode === 'hell' || b.mode === 'doom') { this.buddies.delete(id); this.hooks.removed?.(id); return; }
+    if (!goodbye || ['hell', 'doom', 'ride', 'enter'].includes(b.mode)) {
+      this.tower.rides = this.tower.rides.filter((r) => r.id !== id || r.dir === 'up');
+      this.buddies.delete(id); this.hooks.removed?.(id); return;
+    }
     if (b.mode === 'held') { b.mode = 'air'; b.fallKind = 'drop'; }
     if (b.mode === 'birth') { b.mode = 'air'; b.fallKind = 'drop'; b.birth = null; if (this.ov.build === b.id) this.ovReturn(); }
     if (b.mode === 'script') { const S = b.script; b.script = null; b.stretch = 1; this.drop(b, 'drop'); S.onDone?.(); }
@@ -382,7 +435,7 @@ class World {
   // ------------------------------------------------------------ right-click actions
   /** Leap or run over to a point (the mouse pointer), across monitors if needed. */
   comeHere(b, point) {
-    if (!b || b.leaving || ['birth', 'script', 'hell', 'doom'].includes(b.mode)) return;
+    if (!b || b.leaving || OFFSTAGE.has(b.mode) || this.homeBound(b)) return;
     b.hide = null;
     // The marker lands on the ledge (or floor) below where you clicked.
     const p = this.platformUnder(point.x, point.y);
@@ -392,7 +445,7 @@ class World {
   }
 
   giveSnack(b) {
-    if (!b || b.leaving || ['birth', 'hell', 'doom', 'script'].includes(b.mode)) return;
+    if (!b || b.leaving || OFFSTAGE.has(b.mode) || this.homeBound(b)) return;
     b.hide = null;
     const d = this.displayAt(b.x, b.y - 2) || this.nearestDisplay(b.x, b.y);
     this.items.push({ id: ++this.itemSeq, kind: 'cookie', x: b.x, y: d.bounds.y - 10, vx: 0, vy: 0, owner: b, born: Date.now() });
@@ -401,13 +454,13 @@ class World {
   }
 
   playFetch(b, point) {
-    if (!b || b.leaving || ['birth', 'hell', 'doom', 'script'].includes(b.mode)) return;
+    if (!b || b.leaving || OFFSTAGE.has(b.mode) || this.homeBound(b)) return;
     b.hide = null;
     const mid = (this.bounds.x0 + this.bounds.x1) / 2;
     const dir = point.x < mid ? 1 : -1;
     const ball = { id: ++this.itemSeq, kind: 'ball', x: point.x, y: point.y, vx: dir * rand(450, 850), vy: -rand(450, 800), owner: b, born: Date.now() };
     this.items.push(ball);
-    b.task = { type: 'fetch', ball, home: { x: point.x, y: point.y }, phase: 'watch', until: Date.now() + 40000 };
+    b.task = { type: 'fetch', ball, home: { x: point.x, y: point.y }, phase: 'watch', until: Infinity };
     this.wake(b);
   }
 
@@ -431,9 +484,9 @@ class World {
 
   /** Files dropped on the buddy: lift the stack overhead, then munch them one by one. */
   ingest(b, names) {
-    if (!b || b.leaving || !names.length || b.mode === 'hell' || b.mode === 'doom') return;
+    if (!b || b.leaving || !names.length || b.mode === 'hell' || b.mode === 'doom' || b.mode === 'ride' || b.mode === 'enter') return;
     const kinds = names.map((n) => Clawd.fileKind(n));
-    b.task = null;
+    this.keepErrand(b);
     b.hide = null;
     this.wake(b);
     b.queue = b.queue.filter((q) => q.then);
@@ -447,7 +500,7 @@ class World {
    * groups: [{ x, y, w, h, count, view: 'rows' | 'icons', color }] in DIPs; adjacent items come pre-merged.
    */
   eatDialog(b, groups, onDone) {
-    if (!b || b.leaving || b.mode === 'birth' || b.mode === 'hell' || b.mode === 'doom') { onDone(); return; }
+    if (!b || b.leaving || OFFSTAGE.has(b.mode)) { onDone(); return; }
     const c = this.centre(b); // measure first: centre() needs the wall it's on
     if (b.mode === 'wall' || b.mode === 'ceil') this.uprightFrom(b);
     if (b.mode === 'held') { b.grab = null; }
@@ -462,7 +515,7 @@ class World {
       steps.push({ type: 'eat', x0: g.x - 9 * s, x1: g.x + g.w + 4 * s, y: cy, s, stretch, cover, g, ms: clamp(g.w * 1.3, 420, 1100) });
     }
     steps.push({ type: 'gulp', ms: 450 });
-    b.task = null; b.walkTarget = null; b.react = null; b.queue = b.queue.filter((q) => q.then);
+    this.keepErrand(b); b.walkTarget = null; b.react = null; b.queue = b.queue.filter((q) => q.then);
     b.script = { steps, i: 0, at: Date.now(), cx: c.x, cy: c.y, s0: b.scale, onDone };
     b.mode = 'script';
   }
@@ -509,9 +562,14 @@ class World {
     if (k >= 1) { S.i++; S.at = now; }
   }
 
+  /** Fetching and going home survive being picked up, fed or tossed; other errands end. */
+  keepErrand(b) { if (b.task && b.task.type !== 'fetch' && b.task.type !== 'home') b.task = null; }
+
+  homeBound(b) { return !!(b.task && b.task.type === 'home'); }
+
   grab(id) {
     const b = this.buddies.get(id);
-    if (!b || b.leaving || ['birth', 'script', 'hell', 'doom'].includes(b.mode)) return;
+    if (!b || b.leaving || OFFSTAGE.has(b.mode)) return;
     if (b.mode === 'wall' || b.mode === 'ceil') this.uprightFrom(b);
     b.mode = 'held';
     b.grab = { dx: this.cursor.x - b.x, dy: this.cursor.y - b.y, x: this.cursor.x, y: this.cursor.y, at: Date.now(), moved: false, from: b.ground };
@@ -520,14 +578,17 @@ class World {
     b.action = null;
     b.react = null;
     b.exit = null;
-    b.task = null;
+    this.keepErrand(b);
     b.queue = b.queue.filter((q) => q.then);
+    b.dizzy = 0;
   }
 
   release() {
     for (const b of this.buddies.values()) {
       if (b.mode !== 'held') continue;
       const g = b.grab;
+      b.queasy = b.dizzy >= SHAKE.sick ? 2 : b.dizzy >= SHAKE.dizzy ? 1 : 0;
+      b.dizzy = 0;
       if (!g.moved && g.from) {
         // A click, not a drag: hop and bring the session's window forward.
         b.mode = 'auto';
@@ -544,6 +605,7 @@ class World {
         b.mode = 'float'; b.vx = 0; b.vy = 0; b.ground = null; b.plat = null;
         const under = this.platforms.find((p) => b.x >= p.x1 && b.x <= p.x2 && Math.abs(p.y - b.y) < 6);
         if (under) this.standOn(b, under, b.x);
+        this.queasyShow(b);
         continue;
       }
       const h = b.history;
@@ -571,6 +633,8 @@ class World {
     }
     this.guard('helpers', () => this.tickMinis(now, dt));
     this.guard('items', () => this.tickItems(now, dt));
+    this.guard('tower', () => this.towerTick(now, dt));
+    this.guard('puke', () => this.tickPuke(now, dt));
   }
 
   guard(what, fn) {
@@ -582,7 +646,12 @@ class World {
     this.hooks.error?.(err, `buddy ${String(b.id).slice(0, 8)} (${b.mode})`);
     const S = b.script;
     b.script = null; b.stretch = 1; b.wall = null; b.ceil = null; b.cdir = 0; b.grab = null; b.birth = null; b.shrink = null;
-    b.queue = []; b.react = null; b.task = null; b.action = null; b.walkTarget = null; b.exit = null; b.hide = null;
+    // Fetching and going home carry on afterwards (unless it keeps failing).
+    const again = b.recoveredAt && Date.now() - b.recoveredAt < 3000;
+    b.recoveredAt = Date.now();
+    const keep = !again && b.task && (b.task.type === 'fetch' || b.task.type === 'home') ? b.task : null;
+    if (again && b.task && b.task.type === 'home') { this.buddies.delete(b.id); this.hooks.removed?.(b.id); return; }
+    b.queue = []; b.react = null; b.task = keep; b.action = null; b.walkTarget = null; b.exit = null; b.hide = null;
     if (!Number.isFinite(b.x) || !Number.isFinite(b.y)) {
       const d = this.displays[0];
       b.x = d ? d.workArea.x + d.workArea.width / 2 : 400; b.y = d ? d.bounds.y + 20 : 20;
@@ -594,7 +663,8 @@ class World {
 
   tickBuddy(b, now, dt, mouseDown) {
     {
-      if (b.mode === 'hell' || b.mode === 'doom') return; // banished, or being dragged around by the Overlord
+      if (b.mode === 'hell' || b.mode === 'doom' || b.mode === 'ride') return; // banished, dragged around by the Overlord, or in the elevator
+      if (b.mode === 'enter') { this.enterTick(b, now); return; }
       if (b.mode === 'birth') { this.birthTick(b, now); return; }
       if (b.script) { this.scriptTick(b, now); return; }
       b.scale = this.scaleAt(b);
@@ -648,14 +718,17 @@ class World {
   ovHome() {
     const d = [...this.displays].sort((a, c) => a.bounds.x - c.bounds.x || a.bounds.y - c.bounds.y)[0];
     if (!d) return { x: 40, y: 0, d: null };
-    return { x: d.bounds.x + 40, y: d.bounds.y, d };
+    // The socket and the peeking eye are about 16 of their pixels either side of this point.
+    const ps = Math.max(2, Math.round(this.ovScaleFor(d) * 0.6));
+    return { x: d.bounds.x + Math.max(40, 17 * ps + 8), y: d.bounds.y, d };
   }
 
-  ovScale() {
-    const { d } = this.ovHome();
+  ovScaleFor(d) {
     const base = Number(d && d.internal ? this.sizes.internal : this.sizes.external) || BASE_SCALE;
     return clamp(Math.round(base * 1.25), 2, 8);
   }
+
+  ovScale() { return this.ovScaleFor(this.ovHome().d); }
 
   ovTween(to, ms, then, big) {
     const o = this.ov;
@@ -773,14 +846,42 @@ class World {
   held(b, now, mouseDown) {
     const c = this.cursor;
     if (!b.grab.moved && Math.hypot(c.x - b.grab.x, c.y - b.grab.y) > 5) b.grab.moved = true;
+    const px = b.x, py = b.y;
     b.x = c.x - b.grab.dx;
     b.y = c.y - b.grab.dy;
+    this.shake(b, b.x - px, b.y - py, now);
     b.history.push({ t: now, x: b.x, y: b.y });
     if (b.history.length > 12) b.history.shift();
-    b.setAnim(b.grab.moved ? 'held' : b.anim);
+    b.setAnim(!b.grab.moved ? b.anim : b.dizzy >= SHAKE.sick ? 'sick' : b.dizzy >= SHAKE.dizzy ? 'dizzyBase' : 'held');
     b.bubble = null;
     // Safety net: if the button came up somewhere we didn't see, drop it.
     if (mouseDown === false && now - b.grab.at > 150) this.release();
+  }
+
+  /** Shaking a held buddy: sharp changes of direction make it dizzy; a little shake wakes a sleeper. */
+  shake(b, dx, dy, now) {
+    const g = b.grab, dt = Math.min(0.1, (now - (g.st || now)) / 1000);
+    g.st = now;
+    b.dizzy = Math.max(0, (b.dizzy || 0) - dt * SHAKE.decay);
+    for (const [v, k] of [[dx, 'sx'], [dy, 'sy']]) {
+      if (Math.abs(v) < 5) continue;
+      const sign = Math.sign(v);
+      if (g[k] && sign !== g[k]) b.dizzy = Math.min(40, b.dizzy + 1);
+      g[k] = sign;
+    }
+    if (b.sleeping && b.dizzy >= SHAKE.wake) this.wake(b);
+  }
+
+  /** After a good shake: dizzy for a bit, and if it was too much, sick (on your taskbar). */
+  queasyShow(b) {
+    const q = b.queasy;
+    b.queasy = 0;
+    if (!q) return;
+    b.push('dizzy', 2600, { sound: 'dizzy' });
+    if (q < 2) return;
+    b.push('sick', 1000, { sound: 'gulp' });
+    b.push('vomit', 2300, { sound: 'blech', start: () => { b.vomiting = { until: Date.now() + 1900 }; } });
+    b.push('sadBase', 1500);
   }
 
   air(b, dt, now) {
@@ -838,7 +939,7 @@ class World {
       b.queue.unshift({ anim: 'land', dur: 160, sound: 'land' }, { anim: 'hi', dur: 1400 });
     } else if (b.spawned) {
       b.spawned = false;
-      b.queue.unshift({ anim: 'land', dur: 150 }, { anim: 'welcome', dur: 1700, sound: 'summon' }, { anim: 'hi', dur: 1400 });
+      b.queue.unshift({ anim: 'land', dur: 150 }, { anim: 'welcome', dur: 2600, sound: 'summon' }, { anim: 'hi', dur: 1400 });
     } else if (kind === 'nap') {
       b.queue.unshift({ anim: 'land', dur: 120 }); // falling asleep: no drama
     } else if ((kind === 'throw' && impact > 1100) || ((kind === 'drop' || kind === 'lost') && impact > 1200) || impact > 2300) {
@@ -846,6 +947,7 @@ class World {
     } else {
       b.queue.unshift({ anim: 'land', dur: 140, sound: impact > 600 ? 'land' : null });
     }
+    if (b.queasy) this.queasyShow(b);
   }
 
   standOn(b, p, x) {
@@ -1139,6 +1241,7 @@ class World {
       const q = b.queue.shift();
       b.react = { ...q, until: now + q.dur };
       if (q.sound) this.sound(b, q.sound);
+      if (q.start) q.start();
       if (q.face !== undefined) b.flip = q.face;
     }
     b.carry = b.react && b.react.carry ? b.react.carry : null;
@@ -1188,12 +1291,21 @@ class World {
     // 5. Don't stand on top of each other (the newer buddy steps aside).
     if (b.separating && b.walkTarget !== null) { b.setAnim('walk'); return; }
     b.separating = false;
-    const crowd = !b.pinned && this.nearby(b, 6 * b.scale + 36, (o) => o.id < b.id);
+    const crowd = !b.pinned && !b.meet && this.nearby(b, 6 * b.scale + 36, (o) => o.id < b.id && !o.meet);
     if (crowd && b.plat) {
       const away = b.x >= crowd.x ? 1 : -1, gap = 25 * b.scale;
       let tx = crowd.x + away * gap;
       if (tx < b.plat.x1 + halfW(b) || tx > b.plat.x2 - halfW(b)) tx = crowd.x - away * gap;
       this.walkTo(b, tx, spd(b, 'walk'), 'walk');
+      b.separating = true;
+      b.action = null;
+      b.setAnim('walk');
+      return;
+    }
+    // …and keep the skyscraper's front clear (the left screen edge is a popular spot).
+    const clear = !b.pinned && b.plat && !b.plat.win && b.walkTarget === null && this.towerClearX(b);
+    if (clear) {
+      this.walkTo(b, clear, spd(b, 'walk'), 'walk');
       b.separating = true;
       b.action = null;
       b.setAnim('walk');
@@ -1252,20 +1364,25 @@ class World {
       if (!T.leapt || now - T.leapt > 1600) { T.leapt = now; this.leapTo(b, clamp(T.x, p.x1 + halfW(b), p.x2 - halfW(b)), p); }
       return true;
     }
+    if (T.type === 'home') return this.homeTask(b, T, now);
     if (T.type === 'fetch') {
       const ball = T.ball;
       if (!this.items.includes(ball)) { this.endTask(b); return false; }
+      // Wherever it ended up (tossed onto a wall, the ceiling, left floating), it gets back down and carries on.
+      if (b.mode === 'wall' || b.mode === 'ceil') { this.letGo(b, 'drop'); return true; }
+      if (b.mode === 'float') { this.drop(b, 'drop'); return true; }
       if (T.phase === 'watch') {
-        if (!grounded) { this.letGo(b, 'drop'); return true; }
+        if (!grounded) return true;
         b.walkTarget = null;
         b.flip = ball.x < b.x;
         b.setAnim('look');
         if (ball.rest || now - ball.born > 2500) T.phase = 'chase';
         return true;
       }
+      if (T.phase === 'return' && ball.carrier !== b) T.phase = 'chase'; // dropped it somehow: go get it again
       const target = T.phase === 'chase' ? { x: ball.x, y: ball.y } : T.home;
       const p = T.phase === 'chase' && ball.rest ? ball.rest : this.platformUnder(target.x, target.y);
-      if (!p) { this.endTask(b); return false; }
+      if (!p) { b.setAnim('look'); return true; }
       if (!grounded) return true; // mid-leap
       if (b.plat && b.plat.key === p.key) {
         if (Math.abs(target.x - b.x) < halfW(b) * 0.8) {
@@ -1293,6 +1410,233 @@ class World {
     return false;
   }
 
+  // ------------------------------------------------------------ the skyscraper
+  /** main.js keeps this list: every known buddy (oldest first), with what its floor shows. */
+  setResidents(list) { this.tower.residents = list; }
+
+  /** Where the skyscraper stands: the bottom-left corner of the main display. */
+  towerGeom() {
+    const d = this.displays.find((x) => x.primary) || this.displays[0];
+    if (!d) return null;
+    const base = Number(d.internal ? this.sizes.internal : this.sizes.external) || BASE_SCALE;
+    const ts = clamp(Math.round(base * 0.75), 2, 4);
+    const ground = this.floorY(d);
+    const x0 = d.workArea.x + 10;
+    const room = ground - (d.workArea.y + 90) - (TW.LOBBY + TW.ROOF) * ts;
+    const max = Math.max(1, Math.floor(room / (TW.FLOOR * ts)));
+    const all = this.tower.residents;
+    // More buddies than floors fit: the most recently seen ones get the floors.
+    const shown = all.length > max ? [...all].sort((a, c) => (c.seen || 0) - (a.seen || 0)).slice(0, max).sort((a, c) => (a.created || 0) - (c.created || 0)) : all;
+    return {
+      d, ts, ground, x0, n: shown.length, shown, hidden: all.length - shown.length,
+      door: x0 + (TW.DOOR_X + TW.DOOR_W / 2) * ts,
+    };
+  }
+
+  towerFloor(g) {
+    return this.platforms.find((p) => !p.win && g.door >= p.x1 && g.door <= p.x2 && Math.abs(p.y - g.ground) < 2) || this.platformUnder(g.door, g.ground - 4);
+  }
+
+  /** A buddy standing in front of the skyscraper: where to step to so it's visible again (or null). */
+  towerClearX(b) {
+    const g = this.towerGeom();
+    if (!g || !g.n || Math.abs(b.plat.y - g.ground) > 2) return null;
+    const right = g.x0 + TW.W * g.ts + halfW(b) + 6;
+    if (b.x >= right || b.x <= g.x0 - halfW(b) || right + 70 > b.plat.x2) return null;
+    return right + rand(10, 60);
+  }
+
+  towerToggle(open = !this.tower.open) {
+    this.tower.open = open;
+    if (!open) this.tower.holdUntil = 0;
+  }
+
+  /** Send a buddy home: it walks (or leaps) to the skyscraper, goes in, and rides up to its floor. */
+  goHome(id, { hurry = false } = {}) {
+    const b = this.buddies.get(id);
+    if (!b || b.leaving) return false;
+    if (b.mode === 'ride') {
+      // Turned off again before it got out: it never left.
+      this.tower.rides = this.tower.rides.filter((r) => r.id !== id);
+      this.buddies.delete(id); this.hooks.removed?.(id);
+      return true;
+    }
+    if (b.mode === 'enter') return true;
+    if (this.homeBound(b)) { if (hurry) b.task.hurry = true; return true; }
+    const g = this.towerGeom();
+    if (!g || !this.towerFloor(g) || ['hell', 'doom', 'birth'].includes(b.mode) || this.doom) return false;
+    if (b.mode === 'script') { const S = b.script; b.script = null; b.stretch = 1; this.drop(b, 'drop'); S.onDone?.(); }
+    b.hide = null; b.pinned = false; b.sleeping = false; b.action = null; b.react = null;
+    b.queue = b.queue.filter((q) => q.then);
+    if (this.items.some((it) => it.carrier === b)) this.endTask(b);
+    b.task = { type: 'home', until: Infinity, hurry };
+    if (!hurry) b.push('wave', 900, { sound: 'bye' });
+    return true;
+  }
+
+  homeTask(b, T, now) {
+    const g = this.towerGeom(), p = g && this.towerFloor(g);
+    if (!p) { b.task = null; this.remove(b.id); return true; }
+    if (b.mode === 'wall' || b.mode === 'ceil') { this.letGo(b, 'drop'); return true; }
+    if (b.mode === 'float') { this.drop(b, 'drop'); return true; }
+    if (b.mode !== 'auto') return true; // in the air
+    b.bubble = null;
+    if (b.plat && b.plat.key === p.key) {
+      if (Math.abs(g.door - b.x) < 4) {
+        b.walkTarget = null;
+        b.x = g.door;
+        // Wait on the doorstep until the building has risen out of the ground.
+        if (this.tower.h < 1) { b.flip = true; b.setAnim('look'); return true; }
+        b.task = null;
+        b.mode = 'enter';
+        b.enterAt = now;
+        b.flip = false;
+        b.setAnim('walk');
+        this.sound(b, 'door');
+        return true;
+      }
+      if (b.walkTarget === null || Math.abs(b.walkTarget - g.door) > 2) {
+        const far = T.hurry || Math.abs(g.door - b.x) > 260;
+        this.walkTo(b, g.door, spd(b, far ? 'run' : 'walk') * (T.hurry ? 2.2 : 1.2), far ? 'zoom' : 'walk');
+      }
+      b.setAnim(b.walkAnim);
+      return true;
+    }
+    if (!T.leapt || now - T.leapt > 1600) { T.leapt = now; this.leapTo(b, clamp(g.door + 50 * b.scale, p.x1 + halfW(b), p.x2 - halfW(b)), p); }
+    return true;
+  }
+
+  /** Stepping through the lobby door. */
+  enterTick(b, now) {
+    const k = (now - b.enterAt) / 550;
+    b.alpha = Math.max(0, 1 - k);
+    b.setAnim('walk');
+    b.bubble = null;
+    if (k < 1) return;
+    this.buddies.delete(b.id);
+    this.tower.rides.push({ id: b.id, dir: 'up', phase: 'call', at: now, look: { body: b.look.body, hat: b.look.hat } });
+    this.hooks.removed?.(b.id);
+  }
+
+  /** Turn a buddy on from its floor: it rides the elevator down and walks out of the lobby. */
+  leaveHome(session, look) {
+    if (this.buddies.has(session.id)) return this.buddies.get(session.id);
+    const g = this.towerGeom();
+    if (!g || !this.towerFloor(g) || this.doom) return this.add(session, { look, birth: false });
+    const b = new Buddy(session, look);
+    b.mode = 'ride'; b.alpha = 0; b.spawned = false;
+    b.x = g.door; b.y = g.ground;
+    b.scale = this.scaleAt(b);
+    this.buddies.set(b.id, b);
+    this.tower.rides.push({ id: b.id, dir: 'down', phase: 'call', at: Date.now(), look: { body: b.look.body, hat: b.look.hat } });
+    return b;
+  }
+
+  towerTick(now, dt) {
+    const W = this.tower, g = this.towerGeom();
+    if (!g) return;
+    const coming = [...this.buddies.values()].some((b) => this.homeBound(b) || b.mode === 'enter');
+    if (coming || W.rides.length) W.holdUntil = now + 1800; // rises for arrivals and departures, then sinks again
+    const up = W.open || now < W.holdUntil;
+    W.h = clamp(W.h + ((up ? 1 : -1) * dt) / 0.6, 0, 1);
+    const R = W.rides[0];
+    if (!R || W.h < 1) return;
+    const floor = g.shown.findIndex((r) => r.id === R.id);
+    if (floor < 0) return this.finishRide(R, g, now); // no floor on screen for it (too many buddies)
+    const speed = Math.max(3, g.n / 1.5); // floors per second
+    const toward = (f) => {
+      const d = f - W.car.f;
+      if (Math.abs(d) <= speed * dt) { W.car.f = f; return true; }
+      W.car.f += Math.sign(d) * speed * dt;
+      return false;
+    };
+    const t = now - R.at;
+    const next = (phase) => { R.phase = phase; R.at = now; };
+    if (R.dir === 'up') {
+      if (R.phase === 'call') { if (toward(-1)) next('board'); }
+      else if (R.phase === 'board') { if (t > 600) next('lift'); }
+      else if (R.phase === 'lift') { if (toward(floor)) { next('exit'); this.hooks.sound('chirp', g.door, g.ground); } }
+      else if (t > 800) this.finishRide(R, g, now);
+    } else if (R.phase === 'call') { if (toward(floor)) next('leave'); }
+    else if (R.phase === 'leave') { if (t > 800) next('lift'); }
+    else if (R.phase === 'lift') { if (toward(-1)) next('out'); }
+    else if (t > 600) this.finishRide(R, g, now);
+  }
+
+  finishRide(R, g, now) {
+    this.tower.rides = this.tower.rides.filter((r) => r !== R);
+    if (R.dir !== 'down') return;
+    const b = this.buddies.get(R.id), p = this.towerFloor(g);
+    if (!b || b.mode !== 'ride' || !p) return;
+    this.standOn(b, p, g.door);
+    b.alpha = 0.15;
+    b.flip = false;
+    b.idleSince = now;
+    const out = clamp(g.door + rand(25, 60) * b.scale, p.x1 + halfW(b), p.x2 - halfW(b));
+    b.push('hi', 1300, { sound: 'greet', then: () => { if (b.mode === 'auto' && b.session.state !== 'working') { this.walkTo(b, out); b.action = { type: 'walk' }; } } });
+  }
+
+  towerSnapshot(now) {
+    const W = this.tower, g = this.towerGeom();
+    if (!g || !g.n) return null;
+    const R = W.rides[0], t = R ? now - R.at : 0;
+    const floors = g.shown.map((r) => {
+      const b = this.buddies.get(r.id);
+      const ride = W.rides.find((x) => x.id === r.id);
+      // Lit = at home. mini: where its little figure stands (0 in the room .. 1 at the elevator).
+      let lit = !b && !(ride && ride.dir === 'up'), mini = lit ? 0 : null;
+      if (ride && ride.dir === 'down' && (ride !== R || R.phase === 'call')) { lit = true; mini = 0; }
+      if (ride && ride === R && R.dir === 'down' && R.phase === 'leave') { lit = true; mini = clamp(t / 800, 0, 1); }
+      if (ride && ride === R && R.dir === 'up' && R.phase === 'exit') { lit = true; mini = 1 - clamp(t / 800, 0, 1); }
+      const on = !!b && !this.homeBound(b) && b.mode !== 'enter';
+      const busy = !!ride || (!!b && (this.homeBound(b) || b.mode === 'enter'));
+      const status = !b || b.mode === 'ride' ? (ride ? 'on the way' : 'home') : this.homeBound(b) || b.mode === 'enter' ? 'coming home' : b.session.state === 'working' ? 'at work' : 'out and about';
+      return { id: r.id, name: r.name, body: r.body, hat: r.hat, room: r.room, lit, mini, on, busy, status };
+    });
+    let lobby = null;
+    if (R && R.phase === 'board') lobby = { k: clamp(t / 600, 0, 1), dir: 'in', body: R.look.body };
+    if (R && R.phase === 'out') lobby = { k: clamp(t / 600, 0, 1), dir: 'out', body: R.look.body };
+    const entering = [...this.buddies.values()].some((b) => b.mode === 'enter' || (this.homeBound(b) && b.plat && Math.abs(b.x - g.door) < 30 * b.scale));
+    return {
+      d: g.d.id, x0: g.x0, ground: g.ground, ts: g.ts, h: W.h, open: W.open, floors, hidden: g.hidden,
+      car: { f: W.car.f, rider: R && R.phase === 'lift' ? R.look.body : null, door: !!R && ['board', 'out', 'exit', 'leave'].includes(R.phase) },
+      lobby, door: entering || !!lobby,
+    };
+  }
+
+  // ------------------------------------------------------------ being sick
+  tickPuke(now, dt) {
+    const P = this.puke;
+    for (const b of this.buddies.values()) {
+      if (!b.vomiting) continue;
+      if (now > b.vomiting.until || (b.mode !== 'auto' && b.mode !== 'float')) { b.vomiting = null; continue; }
+      if (Math.random() < 0.8) {
+        const dir = b.flip ? -1 : 1, s = Math.max(2, Math.round(b.scale * 0.75));
+        P.drops.push({ x: b.x + dir * 2 * b.scale, y: b.y - 5.5 * b.scale, vx: dir * rand(70, 280) + rand(-40, 40), vy: rand(-280, -60), s, c: pick(PUKE) });
+      }
+    }
+    // It falls past window ledges onto the floor (your taskbar), pools there, spreads, and sinks in.
+    for (const d of [...P.drops]) {
+      const prevY = d.y;
+      d.vy += G * dt; d.x += d.vx * dt; d.y += d.vy * dt;
+      const fl = this.platforms.find((q) => !q.win && d.x >= q.x1 && d.x <= q.x2 && prevY <= q.y + 1 && d.y >= q.y);
+      if (fl) {
+        P.drops.splice(P.drops.indexOf(d), 1);
+        let pd = P.puddles.find((q) => q.y === fl.y && Math.abs(q.x - d.x) < q.w / 2 + 8 * d.s);
+        if (!pd) { pd = { x: d.x, y: fl.y, w: 4 * d.s, v: 0, s: d.s, seed: Math.floor(Math.random() * 1000), last: now }; P.puddles.push(pd); }
+        pd.v++; pd.last = now;
+        pd.w = Math.min(70 * pd.s, pd.w + 1.5 * d.s);
+        pd.x += (d.x - pd.x) * 0.08;
+      } else if (d.y > this.bounds.y1 + 200) P.drops.splice(P.drops.indexOf(d), 1);
+    }
+    for (const pd of [...P.puddles]) {
+      const age = now - pd.last;
+      pd.w = Math.min(80 * pd.s, pd.w + dt * pd.s * (age < 2500 ? 5 : 1.5));
+      pd.sink = clamp((age - 2500) / 4500, 0, 1);
+      if (pd.sink >= 1) P.puddles.splice(P.puddles.indexOf(pd), 1);
+    }
+  }
+
   endTask(b) {
     const T = b.task;
     b.task = null;
@@ -1303,6 +1647,7 @@ class World {
   work(b, now) {
     const s = b.session;
     b.action = null;
+    b.meet = null;
     b.exit = null;
     b.idleSince = now;
     if (b.sleeping) this.wake(b);
@@ -1339,13 +1684,23 @@ class World {
   idle(b, now) {
     const s = b.session;
     b.workKind = null;
-    if (now - s.lastEventAt > STALE_AFTER && !b.leaving) { this.remove(b.id); return; }
+    if (now - s.lastEventAt > STALE_AFTER && !b.leaving) { if (this.hooks.stale) this.hooks.stale(b.id); else this.remove(b.id); return; }
+
+    // On the way to meet a friend (this survives leaps and landings, unlike b.action).
+    if (b.meet) {
+      if (this.meetTick(b, b.meet, now)) return;
+      b.meet = null;
+    }
 
     const a = b.action;
     if (a) {
-      if (a.type === 'walk' || a.type === 'approach') {
+      if (a.type === 'walk') {
+        // A long stroll can be cut short when there's a friend to see.
+        if (b.walkTarget !== null && now - b.greetAt > GREET_COOLDOWN && Math.random() < 0.004) {
+          const friend = this.findFriend(b, now);
+          if (friend) { b.greetAt = friend.greetAt = now; b.meet = { other: friend, until: now + 30000, leapt: 0 }; this.stopWalk(b); return; }
+        }
         if (b.walkTarget !== null) { b.setAnim(b.walkAnim); return; }
-        if (a.type === 'approach') return this.greet(b, a.other, now);
         b.action = null;
       } else if (a.type === 'sleep') {
         b.setAnim(a.anim);
@@ -1391,13 +1746,15 @@ class World {
       return;
     }
 
-    // Say hi to a nearby buddy.
-    const friend = this.nearby(b, 80 * b.scale, (o) => !o.sleeping && !o.pinned && o.session.state !== 'working' && !o.react && now - o.greetAt > GREET_COOLDOWN);
-    if (friend && now - b.greetAt > GREET_COOLDOWN && Math.random() < 0.5) {
-      b.greetAt = friend.greetAt = now;
-      this.walkTo(b, friend.x + (b.x < friend.x ? -15 : 15) * b.scale);
-      b.action = { type: 'approach', other: friend };
-      return;
+    // Nothing to do: go and find a friend (on any screen) to hang out with.
+    if (now - b.greetAt > GREET_COOLDOWN && Math.random() < 0.6) {
+      const friend = this.findFriend(b, now);
+      if (friend) {
+        b.greetAt = friend.greetAt = now;
+        b.meet = { other: friend, until: now + 30000, leapt: 0 };
+        b.action = null;
+        return;
+      }
     }
 
     const r = Math.random();
@@ -1419,8 +1776,66 @@ class World {
     }
   }
 
+  // ------------------------------------------------------------ friends
+  /** Free for a chat: awake, not working, nothing else on. Lenient: also while it climbs, falls or finishes a reaction. */
+  sociable(o, now, lenient = false) {
+    if (!o || this.buddies.get(o.id) !== o || o.leaving || o.hide || o.sleeping || o.pinned || o.isMini || o.task || this.panicking()) return false;
+    if (o.session.state === 'working' || o.session.attention === 'permission' || o.session.attention === 'question') return false;
+    if (lenient) return ['auto', 'wall', 'ceil', 'air'].includes(o.mode);
+    return o.mode === 'auto' && !!o.plat && !o.react && !o.queue.length;
+  }
+
+  /** Stop where you are (dropping any plan to walk off an edge, climb or cross). */
+  stopWalk(b) { b.walkTarget = null; b.exit = null; b.exitKind = null; b.climbPlan = null; b.action = null; }
+
+  findFriend(b, now) {
+    if (!b.plat || b.pinned) return null;
+    let best = null, bestD = Infinity;
+    for (const o of this.buddies.values()) {
+      if (o === b || !this.sociable(o, now, true) || o.mode === 'air' || now - o.greetAt < GREET_COOLDOWN * 0.5) continue;
+      if (o.meet) continue;
+      const d = Math.abs(o.x - b.x) + Math.abs(o.y - b.y) * 2 + (o.plat && o.plat.key === b.plat.key ? 0 : 400);
+      if (d < bestD) { best = o; bestD = d; }
+    }
+    return best;
+  }
+
+  /** Walking (or leaping) over to a friend. Returns false when the meeting is off. */
+  meetTick(b, a, now) {
+    const o = a.other;
+    if (now > a.until || !this.sociable(o, now, true) || !b.plat) return false;
+    if (o.mode !== 'auto' || !o.plat || o.react || o.queue.length) {
+      // Up on a wall or the ceiling (or still busy with something): call it down and wait for it.
+      if (o.mode === 'wall' || o.mode === 'ceil') o.callDown = now;
+      b.walkTarget = null;
+      b.flip = o.x < b.x;
+      b.setAnim('look');
+      return true;
+    }
+    const gap = Math.max(15 * Math.max(b.scale, o.scale), 6 * b.scale + 40);
+    if (b.plat.key === o.plat.key) {
+      if (Math.abs(o.x - b.x) <= gap + 8) { this.greet(b, o, now); return true; }
+      this.stopWalk(o); o.action = { type: 'anim', anim: 'look', until: now + 1500 }; o.flip = b.x < o.x; // it waits for you
+      let tx = o.x + (b.x < o.x ? -gap : gap);
+      if (tx < b.plat.x1 + halfW(b) || tx > b.plat.x2 - halfW(b)) tx = o.x + (b.x < o.x ? gap : -gap);
+      if (b.walkTarget === null || Math.abs(b.walkTarget - tx) > 24) {
+        const far = Math.abs(tx - b.x) > 320;
+        this.walkTo(b, tx, spd(b, far ? 'run' : 'walk'), far ? 'zoom' : 'walk');
+      }
+      b.setAnim(b.walkAnim);
+      return true;
+    }
+    if (!a.leapt || now - a.leapt > 1800) {
+      a.leapt = now;
+      const p = o.plat, side = b.x < o.x ? -1 : 1;
+      this.leapTo(b, clamp(o.x + side * gap, p.x1 + halfW(b), p.x2 - halfW(b)), p);
+    }
+    return true;
+  }
+
   /** Idle behaviour while hanging on a wall or the ceiling. */
   idleUp(b, now) {
+    if (b.callDown && now - b.callDown < 1500) { b.callDown = 0; return this.letGo(b, 'jump'); } // a friend wants to chat: hop down
     if (b.mode === 'wall') {
       if (!b.cdir && now >= b.clingUntil) {
         const next = b.pinned ? 'down' : b.climbPlan?.next || pick(['down', 'drop', 'ceil']);
@@ -1459,15 +1874,26 @@ class World {
 
   greet(b, other, now) {
     b.action = null;
+    b.meet = null;
     if (!this.buddies.has(other.id) || other.mode !== 'auto' || other.session.state === 'working') return;
-    other.action = null;
-    other.walkTarget = null;
+    other.meet = null;
+    this.stopWalk(other);
+    this.stopWalk(b);
+    b.greetAt = other.greetAt = now;
     const bFaceLeft = other.x < b.x;
-    b.push('hi', 1600, { face: bFaceLeft, sound: 'greet' });
-    other.push('ola', 1600, { face: !bFaceLeft });
-    b.push('cheer', 800);
-    other.push('cheer', 800);
-    if (Math.random() < 0.3) b.push('love', 1600);
+    b.push('hi', 1400, { face: bFaceLeft, sound: 'greet' });
+    other.push('ola', 1400, { face: !bFaceLeft });
+    const scene = pickScene(b, other);
+    const pair = [b, other], faces = [bFaceLeft, !bFaceLeft];
+    for (const [who, text, anim, sound] of scene) {
+      if (who === 'both') {
+        const dur = 1700;
+        pair.forEach((x, i) => x.push(anim, dur, { face: faces[i], say: Array.isArray(text) ? text[i] : text || undefined, sound: i === 0 ? sound : undefined }));
+        continue;
+      }
+      const dur = clamp(1000 + text.length * 60, 1500, 3000);
+      pair.forEach((x, i) => x.push(i === who ? anim || 'talk' : 'look', dur, { face: faces[i], say: i === who ? text : undefined, sound: i === who ? sound || 'chat' : undefined }));
+    }
   }
 
   /** Walk to a screen edge and climb it. */
@@ -1654,7 +2080,13 @@ class World {
   tickItems(now, dt) {
     const { x0, x1 } = this.bounds;
     for (const it of [...this.items]) {
-      const dead = now - it.born > 45000 || (it.fadeAt && now - it.fadeAt > 1800) || it.y > this.bounds.y1 + 300;
+      const fetching = it.kind === 'ball' && !it.fadeAt && it.owner && this.buddies.get(it.owner.id) === it.owner && it.owner.task && it.owner.task.ball === it;
+      if (fetching && it.y > this.bounds.y1 + 300) {
+        // Fell out of the world: it drops back in from the top of the main screen.
+        const d = this.displays.find((x) => x.primary) || this.displays[0];
+        Object.assign(it, { x: d.workArea.x + d.workArea.width / 2, y: d.bounds.y + 10, vx: 0, vy: 0, rest: null });
+      }
+      const dead = (!fetching && now - it.born > 45000) || (it.fadeAt && now - it.fadeAt > 1800) || it.y > this.bounds.y1 + 300;
       if (dead) { this.items.splice(this.items.indexOf(it), 1); continue; }
       const o = it.owner;
       it.s = o ? o.scale : BASE_SCALE;
@@ -1951,7 +2383,7 @@ class World {
     const out = [];
     const short = (l, carry) => ({ hat: l.hat, hand: l.hand, face: l.face, neck: l.neck, back: l.back, body: l.body, eye: l.eye, carry: carry || undefined });
     for (const b of this.buddies.values()) {
-      if (b.mode === 'hell') continue;
+      if (b.mode === 'hell' || b.mode === 'ride') continue;
       try {
       const c = ['birth', 'script', 'doom'].includes(b.mode) ? { x: b.x, y: b.y } : this.centre(b);
       const d = this.displayAt(c.x, c.y);
@@ -1977,9 +2409,11 @@ class World {
         name: s.displayName,
         alpha,
         bubble: b.bubble,
+        say: b.react && b.react.say && b.mode === 'auto' ? b.react.say : null,
+        sleeping: b.sleeping || undefined,
         hovered: b.hovered,
         birth: b.birth ? { t: now - b.birth.at, x: Math.round(b.birth.cx), y: Math.round(b.birth.cy), big: b.birth.big } : null,
-        interactive: !['birth', 'script', 'doom'].includes(b.mode) && !b.hide && alpha > 0,
+        interactive: !['birth', 'script', 'doom', 'enter'].includes(b.mode) && !b.hide && alpha > 0,
         soot: b.soot ? Math.max(0, Math.min(1, (b.soot.until - now) / 9000)) : 0,
         perm: s.attention === 'permission' && s.pendingPermission ? { ...s.pendingPermission, held: !!s.permHeld } : null,
         minis: this.minis.filter((m) => m.parent === b).map((m) => ({
@@ -1992,7 +2426,14 @@ class World {
       } catch (err) { this.hooks.error?.(err, 'snapshot'); }
     }
     const items = this.items.map((it) => ({ kind: it.kind, x: Math.round(it.x), y: Math.round(it.y), s: it.s || BASE_SCALE, a: it.fadeAt ? Math.max(0, 1 - (now - it.fadeAt) / 1800) : 1 }));
-    return { buddies: out, items, overlord: this.ovSnapshot(now), covers: this.covers.filter((c) => c.p > 0), doom: this.doomSnapshot(now) };
+    const P = this.puke;
+    const puke = P.drops.length || P.puddles.length ? {
+      drops: P.drops.map((d) => ({ x: Math.round(d.x), y: Math.round(d.y), s: d.s, c: d.c })),
+      puddles: P.puddles.map((q) => ({ x: Math.round(q.x), y: q.y, w: Math.round(q.w), s: q.s, v: q.v, sink: q.sink || 0, seed: q.seed })),
+    } : null;
+    let tower = null;
+    try { tower = this.towerSnapshot(now); } catch (err) { this.hooks.error?.(err, 'tower snapshot'); }
+    return { buddies: out, items, overlord: this.ovSnapshot(now), covers: this.covers.filter((c) => c.p > 0), doom: this.doomSnapshot(now), tower, puke };
   }
 }
 

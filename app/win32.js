@@ -200,6 +200,7 @@ function fileDialogs(ownPid) {
       exe: exeName(pid[0]),
       title: readText(api.GetWindowTextW, h),
       ownerTitle: owner ? readText(api.GetWindowTextW, owner) : '',
+      pid: pid[0],
       rect: rectOf(h),
       open: open && api.IsWindowVisible(open) ? { handle: open, rect: rectOf(open), enabled: api.IsWindowEnabled(open) } : null,
     });

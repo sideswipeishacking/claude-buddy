@@ -74,13 +74,13 @@ That copies the app into your user folder and registers this folder's copy as a 
 
 ### Windows
 
-Nothing special. Setup adds a **Claude Buddy** Start-menu shortcut and turns on starting at login (you can switch that off under **Settings** in the Overlord's menu).
+Nothing special. Setup adds a **Claude Buddy** Start-menu shortcut and turns on starting at login (you can switch that off in the Overlord's panel: hover the top-left corner).
 
 ### macOS
 
 - The first time the Overlord reads your usage limits, macOS asks whether Claude Buddy may use the **"Claude Code-credentials"** keychain item. Choose **Always Allow**. That's the login Claude Code saved; it's only sent to `api.anthropic.com` (see [privacy](privacy.md)).
 - To drop files onto a buddy and have them pasted into Claude's prompt box, allow Claude Buddy under **System Settings → Privacy & Security → Accessibility**. Without it, the buddy leaves them on your clipboard and asks you to press ⌘V.
-- *Type along* is off by default on macOS because it needs **Input Monitoring**. Turn it on from the Overlord's **Settings** menu and macOS will ask.
+- *Type along* is off by default on macOS because it needs **Input Monitoring**. Turn it on in the Overlord's panel (hover the top-left corner) and macOS will ask.
 - Starting at login uses a LaunchAgent in `~/Library/LaunchAgents`.
 
 ### Linux
@@ -121,7 +121,7 @@ This stops the app and removes the plugin, the desktop app, the plain `/buddy` c
 To do it by hand:
 
 1. In Claude Code: `/plugin uninstall claude-buddy@claude-buddy` and `/plugin marketplace remove claude-buddy`.
-2. Quit Claude Buddy (Overlord menu → **Quit**, or the tray icon).
+2. Quit Claude Buddy (the Overlord's panel → **Quit**, or the tray icon).
 3. Delete the desktop app folder and, if you like, the settings folder (see [the table above](#where-things-are-installed)).
 4. Delete `~/.claude/commands/buddy.md` if it ends with `<!-- claude-buddy-command -->`.
 5. Remove the start-at-login entry: on Windows, `ClaudeBuddy` under *Settings → Apps → Startup*; on macOS, `~/Library/LaunchAgents/io.github.sideswipeishacking.claude-buddy.plist`; on Linux, `~/.config/autostart/claude-buddy.desktop`.

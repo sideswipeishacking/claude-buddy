@@ -26,6 +26,7 @@ const os = require('os');
 const path = require('path');
 const { shell } = require('electron');
 const P = require('./platform');
+const { launchDetached } = require('../lib/launch');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -70,7 +71,8 @@ function resolveApp(s, { fresh = false } = {}) {
   let own = c.pid ? P.windowOwner(c.pid, wins, tree) : { pid: 0, window: null };
   if (!own.window && c.idePid) own = P.windowOwner(c.idePid, wins, tree);
   // The hook's own process is gone by now: keep the app found earlier while it's still running.
-  if (!own.window && s.app && s.app.pid && tree.has(s.app.pid)) own = P.windowOwner(s.app.pid, wins, tree);
+  const same = (pid, exe) => { const e = tree.get(pid); return !!e && (!exe || baseName(e.exe) === baseName(exe)); };
+  if (!own.window && s.app && s.app.pid && same(s.app.pid, s.app.exe)) own = P.windowOwner(s.app.pid, wins, tree);
   const w = own.window;
   const kind = s.where || 'terminal';
   const app = { at: Date.now(), kind, pid: own.pid, exe: w ? w.exe : '', path: w ? w.path || P.exePath(own.pid) : '', name: '', scheme: null, tmux: !!c.tmux };
@@ -88,6 +90,23 @@ function resolveApp(s, { fresh = false } = {}) {
   }
   s.app = app;
   return app;
+}
+
+/**
+ * Ask an IDE to show a project folder: VS Code-family editors and JetBrains IDEs bring up the
+ * window that has it open, or open it (the same as "Open with…" in a file manager).
+ */
+function openProject(exePath, folder) {
+  try {
+    if (!fs.existsSync(folder)) return false;
+    if (process.platform === 'darwin') {
+      const bundle = P.bundleOf && P.bundleOf(exePath);
+      if (!bundle) return false;
+      require('child_process').execFile('open', ['-a', bundle, folder], () => {});
+      return true;
+    }
+    return launchDetached(exePath, [folder], { cwd: folder });
+  } catch { return false; }
 }
 
 /** Of several windows of one app, the one whose title names the session's project. */
@@ -161,6 +180,15 @@ async function openSession(s, { strict = false } = {}) {
     if (!(await waitFor(check, 3500))) return { ok: false, why: "the Claude app didn't come to the front" };
     await sleep(local ? 1000 : 300);
     return { ok: true, app, check, input: !!local };
+  }
+
+  if ((app.kind === 'ide' || app.kind === 'ide-terminal') && app.path && s.cwd && openProject(app.path, s.cwd)) {
+    await waitFor(check, 3000); // the editor brings up (or opens) the window for this project
+    await sleep(500);
+    if (app.kind === 'ide-terminal' || !app.scheme) return { ok: true, app, check, input: false };
+    await shell.openExternal(`${app.scheme}://anthropic.claude-code/open?session=${encodeURIComponent(s.id)}`);
+    await sleep(800);
+    return { ok: true, app, check, input: true };
   }
 
   if (app.kind === 'ide' && app.scheme) {

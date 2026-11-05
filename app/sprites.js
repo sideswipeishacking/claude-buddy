@@ -255,9 +255,42 @@
       'RRRRRRRRRRRRRRR ', 'RWRRWRRWRRWRRRRR', '              RR', '               R',
     ] },
   });
+  Object.assign(HATS, {
+    // ---- more hats (round 7)
+    witch: { x0: -1, y0: -9, pal: { K: '#2b2438', P: '#8a63d2' }, rows: [
+      '       KK       ', '      KKK       ', '      KKKK      ', '     KKKKK      ', '     KKKKKK     ',
+      '    KKKKKKK     ', '    PPPPPPPP    ', '   KKKKKKKKKK   ', 'KKKKKKKKKKKKKKKK'] },
+    detective: { x0: 1, y0: -4, pal: { B: '#8b6b4a', b: '#6b4e32' }, rows: ['   BBBBBB   ', '  BbBBBBbB  ', ' BBBBBBBBBB ', 'BBbbbbbbbbBB'] },
+    sombrero: { x0: -3, y0: -5, pal: { Y: '#e8c25a', R: '#d6455d', G: '#37d351' }, rows: [
+      '      YYYYYYYY      ', '     YYYYYYYYYY     ', '     RGRGRGRGRG     ', '  YYYYYYYYYYYYYYYY  ', 'YYYYYYYYYYYYYYYYYYYY'] },
+    knight: { x0: 1, y0: -6, pal: { R: '#d6455d', S: '#b9c3d3', s: '#8a95a8' }, rows: [
+      '     RR     ', '    RRR     ', '   RR       ', '  SSSSSSSS  ', ' SSSSSSSSSS ', 'SsSsSsSsSsSs'] },
+    jester: { x0: 0, y0: -6, pal: { Y: '#ffe12e', R: '#d6455d', P: '#4b3fa0' }, rows: [
+      'Y            Y', ' RR        PP ', ' RRR      PPP ', '  RRRR  PPPP  ', '  RRRRRPPPPP  ', ' YYYYYYYYYYYY '] },
+    flowercrown: { x0: 0, y0: -2, pal: { P: '#e46fa8', Y: '#ffe12e', W: '#ffffff', G: '#37d351' }, rows: [' PP YY WW PP ', 'GGGGGGGGGGGGG'] },
+    police: { x0: 1, y0: -4, pal: { B: '#2d3f8c', Y: '#ffc431', K: '#1d1d26' }, rows: ['  BBBBBBBB  ', ' BBBBYYBBBB ', ' BBBBBBBBBB ', 'KKKKKKKKKKK '] },
+    firefighter: { x0: 0, y0: -5, pal: { R: '#d6455d', Y: '#ffc431' }, rows: [
+      '   RRRRRRRR   ', '  RRRRYYRRRR  ', '  RRRRYYRRRR  ', ' RRRRRRRRRRRR ', 'RRRRRRRRRRRRRR'] },
+    unicorn: { x0: 5, y0: -6, pal: { Y: '#ffd86b', W: '#fff4d6', P: '#f7a8c8' }, rows: ['  Y ', ' YW ', ' WY ', 'YWY ', 'WYW ', 'PYWP'] },
+    ufo: { x0: 2, y0: -8, pal: { G: '#9fe0b8', C: '#d9fff0', S: '#9aa6b8', Y: '#ffe12e' }, rows: [
+      '   GGGG   ', '  GCCCCG  ', ' SSSSSSSS ', 'SYSSYSSYSS', ' SSSSSSSS ', '          ', '    YY    '] },
+    raincloud: { x0: 1, y0: -9, pal: { W: '#c9d1d9', B: '#5aa9e6' }, rows: [
+      '   WWWW     ', ' WWWWWWWW   ', 'WWWWWWWWWWW ', ' WWWWWWWWW  ', '  B   B   B ', ' B   B   B  ', '    B   B   '] },
+    frog: { x0: 1, y0: -4, pal: { G: '#5fbf4a', W: '#ffffff', K: '#1d1d26' }, rows: [' GG    GG  ', 'GWKG  GWKG ', 'GGGGGGGGGGG', 'GGGGGGGGGGG'] },
+    pumpkin: { x0: 2, y0: -6, pal: { O: '#f2994a', o: '#c96f22', G: '#37a34f' }, rows: [
+      '    G     ', '  OOGOO   ', ' OOOOOOOO ', 'OOoOOOOoOO', 'OOoOOOOoOO', ' OOOOOOOO '] },
+    eggshell: { x0: 1, y0: -4, pal: { W: '#fff6e8', w: '#e8dcc8' }, rows: ['   WWWWWW   ', '  WWWWWWWW  ', ' WWWWWWWWWw ', 'W w W wW w W'] },
+    duck: { x0: 4, y0: -6, pal: { Y: '#ffe12e', K: '#1d1d26', O: '#f2994a' }, rows: ['  YY   ', ' YYKY  ', ' YYYYOO', 'YYYYY  ', 'YYYYYY ', ' YYYY  '] },
+    laurel: { x0: 0, y0: -2, pal: { Y: '#e8c25a' }, rows: ['Y Y Y    Y Y Y', 'YYYYY    YYYYY'] },
+    bucket: { x0: 0, y0: -4, pal: { B: '#7fa6c9', b: '#5f86a9' }, rows: ['   BBBBBBBB   ', '  BBBBBBBBBB  ', '  BbbbbbbbbB  ', 'BBBBBBBBBBBBBB'] },
+    mohawk: { x0: 5, y0: -5, pal: { P: '#e46fa8', p: '#b04a80' }, rows: ['P  P', 'PPPP', 'pPPp', 'PPPP', 'PPPP'] },
+  });
+
   const HAT_ORDER = ['wizard', 'hardhat', 'crown', 'sprout', 'ninja', 'headset', 'cap', 'bow', 'tophat', 'beanie', 'cowboy',
     'chef', 'party', 'viking', 'pirate', 'santa', 'propeller', 'halo', 'horns', 'bunny', 'cat', 'gradcap', 'beret', 'fez',
-    'tiara', 'mushroom', 'antenna', 'bandana'];
+    'tiara', 'mushroom', 'antenna', 'bandana',
+    'witch', 'detective', 'sombrero', 'knight', 'jester', 'flowercrown', 'police', 'firefighter', 'unicorn', 'ufo',
+    'raincloud', 'frog', 'pumpkin', 'eggshell', 'duck', 'laurel', 'bucket', 'mohawk'];
 
   // Equipment: hand items sit at the right claw, face items on the eyes, neck
   // items under the face, back items behind the body. Offsets are relative to
@@ -297,12 +330,49 @@
       fairy: { x0: -6, y0: -1, pal: { B: '#9fe0f5', W: '#ffffff' }, rows: mirror(['  BB  ', ' BWBB ', 'BBBBBB', ' BBBB ', '  BBB ', ' BB   '], 14) },
     },
   };
+  Object.assign(ACCESSORIES.hand, {
+    umbrella: { x0: -2, y0: -8, pal: { R: '#3e6cff', W: '#ffffff', K: '#3b2a20' }, rows: ['  RRRRR  ', ' RRWRRWR ', 'RRRRRRRRR', '    K    ', '    K    ', '    K    ', '    K    ', '    K    ', '   KK    '] },
+    lollipop: { x0: 0, y0: -2, pal: { P: '#ff3b99', W: '#ffffff' }, rows: [' PPP ', 'PWPPP', 'PPPWP', ' PPP ', '  W  ', '  W  ', '  W  '] },
+    icecream: { x0: 0, y0: -1, pal: { P: '#f7a8c8', W: '#fff4e0', Y: '#e0b06b' }, rows: [' PP ', 'PPPP', 'WWWW', 'YYYY', ' YY ', ' YY '] },
+    pizza: { x0: 0, y0: 1, pal: { B: '#b07a35', Y: '#e8b04b', R: '#d6455d' }, rows: ['BBBBB', 'YRYRY', ' YYY ', ' YRY ', '  Y  '] },
+    magnifier: { x0: 0, y0: -1, pal: { K: '#3b3743', C: '#bfe6ff', B: '#8b5a3c' }, rows: [' KKK ', 'KCCCK', 'KCCCK', 'KCCCK', ' KKK ', '   BB', '    B'] },
+    paintbrush: { x0: 0, y0: -3, pal: { R: '#3e6cff', W: '#c9d1d9', K: '#8b5a3c' }, rows: ['  R ', ' RR ', ' WW ', '  K ', '  K ', '  K ', '  K ', '  K '] },
+    wrench: { x0: 0, y0: -1, pal: { S: '#9aa6b8' }, rows: ['S S', 'SSS', ' S ', ' S ', ' S ', ' S ', ' S '] },
+    trophy: { x0: -1, y0: 0, pal: { Y: '#ffc431' }, rows: ['Y YYY Y', 'YYYYYYY', '  YYY  ', '   Y   ', '  YYY  '] },
+    fishingrod: { x0: 0, y0: -6, pal: { K: '#8b5a3c', w: '#e0e0e0', F: '#5aa9e6' }, rows: ['    K ', '   K w', '  K  w', ' K   w', 'K    F'] },
+  });
+  Object.assign(ACCESSORIES.face, {
+    eyepatch: { pal: { K: '#1d1d26' }, rows: ['KKKKKKKKKKKKK', '       KKKKK', '       KKKKK', '        KKK '] },
+    heartglasses: { pal: { R: '#ff3b99', K: '#2f2f38' }, rows: ['RR RR  RR RR', 'RRRRRKKRRRRR', ' RRR    RRR ', '  R      R  '] },
+    starglasses: { pal: { Y: '#ffe12e', K: '#2f2f38' }, rows: ['  Y      Y  ', 'YYYYY  YYYYY', ' YYY KK YYY ', 'Y   Y  Y   Y'] },
+    roundglasses: { pal: { K: '#3b3743' }, rows: [' KKK    KKK ', 'K   KKKK   K', 'K   K  K   K', ' KKK    KKK '] },
+    visor: { pal: { K: '#2f2f38', C: '#3fd0ff' }, rows: ['KKKKKKKKKKKK', 'KCCCCCCCCCCK', 'KCCCCCCCCCCK', 'KKKKKKKKKKKK'] },
+    freckles: { pal: { B: '#b5653f' }, rows: ['', '', '', ' B B    B B', '  B      B '] },
+    clownnose: { pal: { R: '#f2552a' }, rows: ['', '', '', '     RR', '     RR'] },
+    beard: { pal: { B: '#8b5a3c' }, rows: ['', '', '', '', 'BB        BB', 'BBBBBBBBBBBB', ' BBBBBBBBBB '] },
+  });
+  Object.assign(ACCESSORIES.neck, {
+    necklace: { x0: 1, pal: { Y: '#ffc431', R: '#3e6cff' }, rows: ['YYYYYYYYYYYY', '     YY     ', '     RR     '] },
+    medal: { x0: 6, pal: { R: '#d6455d', B: '#3e6cff', Y: '#ffc431' }, rows: ['RB', 'RB', 'YY', 'YY'] },
+    lei: { x0: 0, pal: { P: '#e46fa8', Y: '#ffe12e', W: '#ffffff' }, rows: ['PYPWPYPWPYPWPY', ' P W P Y P W  '] },
+    spikes: { x0: 0, pal: { K: '#2f2f38', S: '#c9d1d9' }, rows: ['KKKKKKKKKKKKKK', 'S S S S S S S '] },
+    camera: { x0: 4, pal: { K: '#2f2f38', C: '#5aa9e6' }, rows: ['K    K', ' K  K ', ' KKKK ', 'KKCCKK', 'KKKKKK'] },
+  });
+  Object.assign(ACCESSORIES.back, {
+    backpack: { x0: -4, y0: 3, pal: { G: '#3aa76d', g: '#2a7f53' }, rows: ['  GG  ', ' GGGG ', 'GGGGGG', 'GgggGG', 'GGGGGG', 'GGGGGG'] },
+    jetpack: { x0: -4, y0: 3, pal: { S: '#9aa6b8', R: '#f2552a', Y: '#ffe12e' }, rows: ['SSSS', 'SSSS', 'SSSS', 'SSSS', 'SSSS', 'RYRY', 'Y Y '] },
+    dragon: { x0: -6, y0: -1, pal: { G: '#3aa76d', g: '#9fe0b8' }, rows: mirror(['    G ', '  GGG ', ' GgGG ', 'GGgGG ', 'G G G '], 14) },
+    butterfly: { x0: -6, y0: 0, pal: { O: '#f2994a', Y: '#ffe12e', P: '#8a63d2' }, rows: mirror([' OO   ', 'OYOO  ', 'OOOO  ', ' OOO  ', 'OPO   ', ' O    '], 14) },
+    quiver: { x0: 13, y0: -2, pal: { W: '#ffffff', Y: '#ffe12e', B: '#8b5a3c' }, rows: [' WY', ' WY', 'BBB', 'BBB', 'BBB', 'BBB'] },
+  });
+
   const SLOTS = ['hand', 'face', 'neck', 'back'];
   const COLORS = {
     classic: '#d97757', coral: '#f07c6c', sunset: '#f2994a', gold: '#e8b04b', lime: '#8fcf5b', mint: '#4fc4a0',
     teal: '#3aa7a3', sky: '#5aa9e6', ocean: '#3f6fd8', grape: '#8a63d2', bubblegum: '#e46fa8', cherry: '#d6455d',
     cocoa: '#8b5a3c', slate: '#6b7a8f', snow: '#e9e4dc', shadow: '#3b3743',
   };
+  Object.assign(COLORS, { neon: '#39ff5a', lavender: '#b9a3f0', peach: '#ffb48a', midnight: '#2a2f5a', rose: '#f28fb0' });
   const EYE_COLORS = { ink: '#2f2f38', navy: '#1e3a8a', forest: '#14532d', berry: '#701a75', white: '#ffffff' };
 
   // ---------------------------------------------------------------- bubbles & minis
@@ -380,6 +450,9 @@
       '-': '... ... ### ... ...', _: '... ... ... ... ###', '.': '... ... ... ... .#.', ' ': '... ... ... ... ...',
       '!': '.#. .#. .#. ... .#.', '?': '##. ..# .#. ... .#.',
       '%': '#.# ..# .#. #.. #.#', ':': '... .#. ... .#. ...', '/': '..# ..# .#. #.. #..', '>': '#.. .#. ..# .#. #..',
+      ',': '... ... ... .#. #..', "'": '.#. .#. ... ... ...', '+': '... .#. ### .#. ...', '(': '.#. #.. #.. #.. .#.', ')': '.#. ..# ..# ..# .#.',
+      '#': '#.# ### #.# ### #.#', '=': '... ### ... ### ...', '<': '..# .#. #.. .#. ..#', '*': '... #.# .#. #.# ...', '&': '.#. #.# .#. #.# .##',
+      '"': '#.# #.# ... ... ...', '~': '... .## ### ##. ...', '@': '### #.# #.# #.. ###', '$': '.## ##. .#. .## ##.', ';': '... .#. ... .#. #..',
     };
     for (const k in g) g[k] = g[k].replace(/ /g, '');
     return g;
@@ -403,6 +476,9 @@
     alert: { map: 'armsUp', face: 'normal', fps: 10, frames: 10, fx: [['hop', { h: [0, 1, 3, 4, 3, 1, 0, 0, 0, 0] }], ['blink', { every: 10 }]] },
     startled: { map: 'armsUp', face: 'surprised', fps: 12, frames: 6, fx: [['hop', { h: [0, 3, 5, 5, 3, 0] }]] },
     wave: { map: 'base', face: 'happy', fps: 5, frames: 2, fx: [['armWave']] },
+    talk: { map: 'base', face: 'happy', fps: 6, frames: 4, fx: [['hop', { h: [0, 1, 0, 1] }]] },
+    sick: { map: 'squash', face: 'dizzy', fps: 10, frames: 6, fx: [['shake']] },
+    vomit: { map: 'squash', face: 'surprised', fps: 8, frames: 4, fx: [['shake', { every: 2 }]], flip: true },
     dizzyBase: { map: 'base', face: 'dizzy', fps: 8, frames: 4, fx: [['shake']] },
     sadBase: { map: 'base', face: 'sad', fps: 3, frames: 6, fx: [['bob', { every: 3 }]] },
     nap: { map: 'lie', face: 'closed', fps: 3, frames: 12, fx: [['bob', { every: 3, bodyOnly: true }], ['float', { range: 4 }]], overlay: 'sleeping-soundly', flip: true },
@@ -488,7 +564,7 @@
     rocket: { pose: 'rocket-launch-success', fps: 10, frames: 6, fx: [['jitter'], ['flicker', { p: 0.3 }]] },
     confetti: { pose: 'artboard-3cla2', fps: 8, frames: 8, fx: [['twinkle', { period: 2 }], ['hop', { h: [0, 1, 3, 4, 3, 1, 0, 0] }]] },
     milestone: { pose: 'artboard-3cla3', fps: 6, frames: 6, fx: [['twinkle', { period: 2 }]] },
-    welcome: { pose: 'welcome-pixel-banner', fps: 8, frames: 16, fx: [['seq', { hold: 6 }]] },
+    welcome: { pose: 'welcome-pixel-banner', fps: 10, frames: 26, fx: [['seq', { hold: 6 }]] }, // 20 reveal steps, then the full banner held (2.6 s)
     hi: { pose: 'artboard-3cla', fps: 6, frames: 6, fx: [['hideClusters', { colors: ['#ff3b99'] }], ['propBob']] },
     ola: { pose: 'artboard-3cla', fps: 6, frames: 6, fx: [['hideClusters', { colors: ['#39ff5a'] }], ['propBob']] },
     love: { pose: 'love-cloud-pixel', fps: 4, frames: 6, fx: [['pulse', { colors: ['#ef509c', '#ff3b99', '#e03890'] }], ['bob', { every: 3 }]] },
@@ -962,6 +1038,50 @@
     return { pixels: px };
   }
 
+  // The skyscraper: every buddy has a floor. Sizes in art pixels (the renderer scales them).
+  // BODY is the building itself; the glass elevator shaft (SHAFT_X, SHAFT_W wide) hangs on its right side.
+  const TOWER = { W: 38, BODY: 30, FLOOR: 16, LOBBY: 14, ROOF: 10, PEEK: 9, WIN_X: 5, WIN_Y: 2, WIN_W: 22, WIN_H: 11, SHAFT_X: 30, SHAFT_W: 8, SWITCH_X: 1, DOOR_X: 4, DOOR_W: 8, DOOR_H: 11 };
+  const ROOM = {
+    walls: { cream: '#f6e3b4', mint: '#cdeccf', rose: '#f4c7cf', sky: '#c9e4f7', lilac: '#dccdf3', sand: '#ecd9b8' },
+    curtains: { red: '#d6455d', blue: '#3e6cff', green: '#3aa76d', gold: '#e8b04b', lace: '#f2f2f2', purple: '#8a63d2' },
+    furniture: {
+      bed: { pal: { W: '#8b5a3c', P: '#5aa9e6', p: '#ffffff', B: '#6b4a2e' }, rows: ['W       ', 'WppPPPPP', 'WPPPPPPP', 'BBBBBBBB', 'B      B'] },
+      desk: { pal: { K: '#2f2f38', C: '#3fd0ff', B: '#8b5a3c' }, rows: ['  KKKK  ', '  KCCK  ', '   KK   ', 'BBBBBBBB', 'B      B', 'B      B'] },
+      couch: { pal: { R: '#d6455d', r: '#9e2f44' }, rows: [' RRRRRR ', 'RRRRRRRR', 'RrrrrrrR', 'R      R'] },
+      bookshelf: { pal: { B: '#8b5a3c', R: '#d6455d', G: '#3aa76d', Y: '#ffc431' }, rows: ['BBBBBB', 'BRGYRB', 'BBBBBB', 'BYRGYB', 'BBBBBB', 'B    B'] },
+      plant: { pal: { G: '#37a34f', T: '#c96f22' }, rows: ['  G  ', ' GGG ', 'GG GG', ' GGG ', '  G  ', ' TTT ', ' TTT '] },
+      arcade: { pal: { K: '#4b3fa0', C: '#3fd0ff', R: '#d6455d', Y: '#ffe12e' }, rows: ['KKKKK', 'KCCCK', 'KCCCK', 'KKKKK', 'KRYKK', 'KKKKK', 'KKKKK'] },
+      beanbag: { pal: { P: '#e46fa8', p: '#b04a80' }, rows: ['  PPPP  ', ' PPPPPP ', 'PPPPPPPP', 'pppppppp'] },
+    },
+    sill: {
+      cactus: { pal: { G: '#4fbf6a', T: '#c96f22' }, rows: [' G ', 'GGG', ' G ', 'TTT'] },
+      flower: { pal: { P: '#e46fa8', G: '#37a34f', T: '#c96f22' }, rows: ['P P', ' G ', 'TTT'] },
+      cat: { pal: { K: '#3b3743' }, rows: ['K K ', 'KKK ', 'KKKK'] },
+      fishbowl: { pal: { C: '#9fe0f5', O: '#f2994a' }, rows: [' CC ', 'COCC', ' CC '] },
+      lamp: { pal: { Y: '#ffe08a', K: '#3b3743' }, rows: ['YYY', ' K ', ' K ', 'KKK'] },
+      trophy: { pal: { Y: '#ffc431' }, rows: ['Y Y', 'YYY', ' Y ', 'YYY'] },
+    },
+  };
+  const DEFAULT_ROOM = { wall: 'cream', curtains: null, furniture: 'bed', sill: null };
+
+  /** A room seen through its window (TOWER.WIN_W × WIN_H), lit (home) or dark (out at work). */
+  function roomPixels(room, lit) {
+    const r = { ...DEFAULT_ROOM, ...(room || {}) };
+    const W = TOWER.WIN_W, H = TOWER.WIN_H, out = [];
+    const put = (x, y, c, a = 1) => { if (x >= 0 && y >= 0 && x < W && y < H) out.push({ x, y, c, a }); };
+    const wall = lit ? ROOM.walls[r.wall] || ROOM.walls.cream : '#1b2333';
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) put(x, y, y >= H - 2 ? (lit ? '#a8794f' : '#141a26') : wall);
+    if (!lit) { for (let i = 0; i < 6; i++) put(3 + i, 1 + i, '#2c3a52'); for (let i = 0; i < 4; i++) put(5 + i, 1 + i, '#2c3a52'); } // moonlit glass
+    const art = (def, ox, oy, dim) => def.rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== ' ') put(ox + x, oy + y, def.pal[ch], dim ? 0.35 : 1); }));
+    const f = r.furniture && ROOM.furniture[r.furniture];
+    if (f) art(f, W - f.rows[0].length - 1, H - 2 - f.rows.length, !lit);
+    const sill = r.sill && ROOM.sill[r.sill];
+    if (sill) art(sill, 1, H - 2 - sill.rows.length, !lit);
+    const cur = r.curtains && ROOM.curtains[r.curtains];
+    if (cur) for (let y = 0; y < H - 2; y++) for (const x of [0, 1, W - 2, W - 1]) put(x, y, cur, lit ? 1 : 0.5);
+    return out;
+  }
+
   function item(kind) {
     const it = ITEMS[kind];
     if (!it) return null;
@@ -970,10 +1090,10 @@
     return { pixels: out };
   }
 
-  function mini(f) {
+  function mini(f, body) {
     const rows = MINI[f % 2], out = [];
     rows.forEach((row, y) => [...row].forEach((ch, x) => {
-      if (ch !== ' ') out.push({ x: x - 3, y: y - rows.length, c: ch === 'e' ? COL.eye : COL.body, a: 1 });
+      if (ch !== ' ') out.push({ x: x - 3, y: y - rows.length, c: ch === 'e' ? COL.eye : body || COL.body, a: 1 });
     }));
     return { pixels: out };
   }
@@ -988,7 +1108,7 @@
   }
 
   return {
-    SCALE, ROLE, COL, ANIMS: A, ACTIVITY_ANIMS, HATS, HAT_ORDER, ACCESSORIES, SLOTS, COLORS, EYE_COLORS, FONT, OV,
+    SCALE, ROLE, COL, ANIMS: A, ACTIVITY_ANIMS, HATS, HAT_ORDER, ACCESSORIES, SLOTS, COLORS, EYE_COLORS, FONT, OV, TOWER, ROOM, DEFAULT_ROOM, roomPixels,
     loadPoses, frame, bubble, mini, item, text, overlord, fileKind,
     frameCount: (name) => (A[name] || A.idle).frames || 1,
     fps: (name) => (A[name] || A.idle).fps || 6,
