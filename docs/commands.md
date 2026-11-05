@@ -2,7 +2,7 @@
 
 - [`/buddy` in Claude Code](#buddy-in-claude-code)
 - [The buddy menu (right-click)](#the-buddy-menu-right-click)
-- [The Overlord's panel](#the-overlords-panel)
+- [The Overlord](#the-overlord)
 - [The skyscraper](#the-skyscraper)
 - [The tray icon](#the-tray-icon)
 - [The `claude-buddy` CLI](#the-claude-buddy-cli)
@@ -47,18 +47,28 @@ The default sizes are **2** on a laptop's own screen and **4** on other monitors
 
 **Mouse:** hover for the card, click to jump to the session, drag to move, fling to throw, shake a little to wake it.
 
-## The Overlord's panel
+## The Overlord
 
-Hover the **top-left corner** of your screen. The panel stays open while the pointer is on it:
+**Hover** the top-left corner: your usage limits (current session and week, with reset times), how many buddies are working / out / at home / asleep, and today's numbers.
 
-- **Usage**: the current session (5-hour) and weekly limits, with reset times.
-- **Gather everyone**: plant a flag and they all come.
-- **Wake everyone**: for when they've all dozed off.
-- **Show / tuck away the skyscraper**.
-- **Summon a demo buddy**: a fake session that shows off the animations.
-- **Animation gallery**: every animation, for the curious (this one *is* a spoiler).
-- **Settings**: sound effects, type along, a buddy for every session automatically (no `/buddy` needed), start at login, hide all buddies, and the pixel size on the laptop screen and on other monitors.
-- **Quit Claude Buddy**: everyone walks home first.
+**Click** it: it comes out of its corner with its options (click it again, the ✕, or move away for a few seconds to send it back).
+
+| Option | What it does |
+| --- | --- |
+| **Gather everyone** | Plant a flag and they all come; buddies on other monitors are flown over by drone |
+| **Wake everyone** | For when they've all dozed off |
+| **Inspection patrol** | It flies over each buddy and scans it; a read-out shows its status, context and today's numbers |
+| **Holo-report** | Today per buddy (prompts, tool calls, edits, minutes) projected big; click to close |
+| **Snacks by drone** | A drone drops a cookie on every buddy |
+| **Boss fight!** | Your buddies against the Overlord for a minute; click the Overlord to help |
+| **Weather** | Rain, snow, storm or clear; *Now and then* lets it pick by itself |
+| **Show / tuck away the skyscraper** | |
+| **Summon a demo buddy** | A fake session that shows off the animations |
+| **Animation gallery** | Every animation, for the curious (this one *is* a spoiler) |
+| **Settings** | Sounds, type along, the token stream, its remarks, patrols now and then, a buddy for every session (no `/buddy` needed), start at login, hide buddies, pixel sizes |
+| **Quit Claude Buddy** | Everyone walks home first |
+
+**Drop files** on the Overlord: a drone delivers them to the buddy whose session was busy most recently.
 
 ## The skyscraper
 

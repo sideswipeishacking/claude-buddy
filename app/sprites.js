@@ -396,6 +396,9 @@
   const ITEMS = {
     cookie: { pal: { C: '#c68a4b', c: '#6b3e1f' }, rows: [' CCC ', 'CcCCC', 'CCCcC', 'CcCCC', ' CCC '] },
     ball: { pal: { Y: '#d8f25a', W: '#ffffff', y: '#a9c23b' }, rows: [' YYY ', 'YWYYY', 'YYYYy', 'YYYyy', ' yyy '] },
+    snowball: { pal: { W: '#ffffff', b: '#c9e4f7' }, rows: [' WWW ', 'WWWWW', 'WWWWb', 'WWWbb', ' bbb '] },
+    parcel: { pal: { B: '#c9a27a', T: '#8b5a3c' }, rows: ['BBTBB', 'BBTBB', 'TTTTT', 'BBTBB', 'BBTBB'] },
+    bug: { pal: { R: '#f06a5d', K: '#2f2f38', r: '#9e2f44' }, rows: ['K   K', ' RRR ', 'RKRKR', 'RrRrR', ' R R '] },
     flag: { pal: { K: '#3b2a20', O: '#d97757', o: '#f0a07f', W: '#ffffff' }, rows: [
       'KOOOOo ', 'KOOWOOo', 'KOOOOOo', 'KOOOo  ', 'K      ', 'K      ', 'K      ', 'K      ', 'K      ', 'KK     '] },
   };
@@ -1194,6 +1197,17 @@
     return { pixels: out };
   }
 
+  // The Overlord's drones (two rotor frames), drawn at their centre.
+  const DRONE = [
+    ['GGG     GGG', ' K       K ', ' KKKKKKKKK ', '  KKCCCKK  ', '   K   K   '],
+    [' G       G ', ' K       K ', ' KKKKKKKKK ', '  KKCCCKK  ', '   K   K   '],
+  ];
+  function drone(f) {
+    const pal = { G: '#c9d1d9', K: '#3b3743', C: '#3fd0ff' }, rows = DRONE[f % 2], out = [];
+    rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== ' ') out.push({ x: x - 5.5, y: y - 2.5, c: pal[ch], a: 1 }); }));
+    return { pixels: out };
+  }
+
   function mini(f, body) {
     const rows = MINI[f % 2], out = [];
     rows.forEach((row, y) => [...row].forEach((ch, x) => {
@@ -1213,7 +1227,7 @@
 
   return {
     SCALE, ROLE, COL, ANIMS: A, ACTIVITY_ANIMS, HATS, HAT_ORDER, ACCESSORIES, SLOTS, COLORS, EYE_COLORS, FONT, OV, TOWER, ROOM, ITEM_GROUPS, DEFAULT_ROOM, roomPixels, roomLayout, roomItemPixels, normalizeRoom,
-    loadPoses, frame, bubble, mini, item, text, overlord, fileKind,
+    loadPoses, frame, bubble, mini, item, text, overlord, fileKind, drone,
     frameCount: (name) => (A[name] || A.idle).frames || 1,
     fps: (name) => (A[name] || A.idle).fps || 6,
     canFlip: (name) => !!(A[name] || A.idle).flip,

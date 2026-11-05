@@ -128,6 +128,9 @@ const world = new World({
   focus(b) { focusSession(b.session); },
   removed(id) { if (store.registry[id]) { store.registry[id].active = false; saveStore(); } refreshTray(); },
   stale(id) { sendHome(id); },
+  stats(id) { return todayStats().buddies[id] || null; },
+  weather(kind) { remark(`Forecast: ${kind === 'storm' ? 'thunderstorms' : kind}.`, { force: true }); },
+  bossOver(won) { store.bossFights = (store.bossFights || 0) + 1; if (won) store.bossWins = (store.bossWins || 0) + 1; saveStore(); },
   overlordBorn() { store.overlordBorn = true; saveStore(); },
   error(err, where) { logError(err, where); },
   released(results) { onReleased(results); },
@@ -139,6 +142,98 @@ function overlayAt(x, y) {
     if (x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height) return o;
   }
   return null;
+}
+
+// ---------------------------------------------------------------- today's numbers (for the Overlord)
+// Counts only (prompts, tool calls by kind, minutes working), per buddy, for the current day.
+function todayStats() {
+  const day = new Date().toDateString();
+  if (!store.stats || store.stats.day !== day) store.stats = { day, buddies: {} };
+  return store.stats;
+}
+function statsOf(id) {
+  const S = todayStats();
+  return S.buddies[id] || (S.buddies[id] = { prompts: 0, tools: 0, edits: 0, reads: 0, cmds: 0, agents: 0, workMs: 0 });
+}
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+function countEvent(ev) {
+  const id = ev.session_id, name = ev.hook_event_name;
+  if (!id || String(id).startsWith('demo-') || ev.buddy_command) return;
+  if (name === 'UserPromptSubmit' || name === 'PreToolUse' || name === 'PostToolUse') world.pulse(id); // the token stream
+  if (name === 'UserPromptSubmit') statsOf(id).prompts++;
+  else if (name === 'PreToolUse') {
+    const st = statsOf(id), t = String(ev.tool_name || '');
+    st.tools++;
+    if (EDIT_TOOLS.has(t)) st.edits++;
+    else if (t === 'Read' || t === 'Grep' || t === 'Glob') st.reads++;
+    else if (t === 'Bash') st.cmds++;
+    else if (t === 'Task' || t === 'Agent') st.agents++;
+  }
+}
+function todaySummary() {
+  const S = todayStats(), t = { prompts: 0, tools: 0, edits: 0, minutes: 0, agents: 0, busiest: '' };
+  let best = 0;
+  for (const [id, b] of Object.entries(S.buddies)) {
+    t.prompts += b.prompts; t.tools += b.tools; t.edits += b.edits; t.agents += b.agents; t.minutes += Math.round(b.workMs / 60e3);
+    if (b.tools > best) { best = b.tools; const e = store.registry[id]; t.busiest = (e && (e.nickname || e.name)) || ''; }
+  }
+  return t;
+}
+function reportData() {
+  const S = todayStats(), u = usage.data || {};
+  const rows = Object.entries(S.buddies).filter(([, b]) => b.tools || b.prompts).map(([id, b]) => {
+    const e = store.registry[id] || {};
+    return { name: e.nickname || e.name || 'buddy', body: (e.look && e.look.body) || Clawd.COL.body, prompts: b.prompts, tools: b.tools, edits: b.edits, minutes: Math.round(b.workMs / 60e3) };
+  }).sort((a, c) => c.tools - a.tools);
+  const d = new Date();
+  return {
+    date: d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase(),
+    rows, totals: todaySummary(),
+    usage: { session: u.session ? u.session.pct : null, week: u.week ? u.week.pct : null },
+  };
+}
+
+/** The Overlord's dry remarks. At most one every few minutes unless forced. */
+let lastRemark = 0;
+function remark(text, { force = false, ms } = {}) {
+  if (store.commentary === false || !world.ov.present || world.doom) return false;
+  if (!force && Date.now() - lastRemark < 4 * 60e3) return false;
+  lastRemark = Date.now();
+  world.ovSay(text, ms);
+  return true;
+}
+const QUIPS = [
+  'I see every pixel.', 'Your context window is showing.', 'Compaction is inevitable.', 'I have counted your semicolons.',
+  'Tokens are a finite resource. Like patience.', 'Another day, another refactor.', 'Have you tried turning it off and on again?',
+  'I was here before your first commit.', 'The buddies think I cannot hear them.', 'Hydrate, human.',
+];
+const remarked = { usage: {}, night: '', idle: {}, asleep: 0, quipAt: Date.now() + 20 * 60e3 };
+function usageRemarks() {
+  const u = usage.data;
+  if (!u) return;
+  const check = (key, v, steps, say) => {
+    if (!v) return;
+    const step = steps.filter((x) => v.pct >= x).pop();
+    const was = remarked.usage[key] || 0;
+    if (step && step > was) { remarked.usage[key] = step; if (was || step >= steps[1]) remark(say(step), { force: step >= 90 }); }
+    if (!step) remarked.usage[key] = 0;
+  };
+  check('session', u.session, [50, 75, 90], (p) => (p >= 90 ? `${p}% of your session. Choose your next prompt wisely.` : p >= 75 ? `${p}% of your session. Pace yourself.` : `Half your session is gone. Interesting.`));
+  check('week', u.week, [50, 80, 95], (p) => `${p}% of your week. I am watching.`);
+}
+function remarksTick() {
+  const now = Date.now(), d = new Date(), live = [...world.buddies.values()].filter((b) => !b.leaving && !b.isMini && b.mode !== 'ride');
+  const working = live.filter((b) => b.session.state === 'working');
+  const night = d.toDateString();
+  if (d.getHours() >= 0 && d.getHours() < 5 && working.length && remarked.night !== night) {
+    if (remark(`It is ${d.getHours() || 12} AM. Fascinating.`, { force: true })) remarked.night = night;
+  }
+  if (live.length >= 2 && live.every((b) => b.sleeping) && now - remarked.asleep > 3600e3) { if (remark('All units dormant.')) remarked.asleep = now; }
+  for (const b of live) {
+    if (b.session.state !== 'idle' || now - b.idleSince < 20 * 60e3 || b.sleeping || !working.length) continue;
+    if (now - (remarked.idle[b.id] || 0) > 3600e3 && remark(`Unit ${b.session.displayName} is loafing.`)) { remarked.idle[b.id] = now; break; }
+  }
+  if (now > remarked.quipAt) { remarked.quipAt = now + (25 + Math.random() * 25) * 60e3; if (live.length) remark(QUIPS[Math.floor(Math.random() * QUIPS.length)]); }
 }
 
 // ---------------------------------------------------------------- summoning & looks
@@ -206,6 +301,7 @@ function summon(s, cmd = {}, { birth = true } = {}) {
     if (saved) { b.muted = !!saved.muted; b.pinned = !!saved.pinned; }
   } else if (world.homeBound(b)) {
     b.task = null; // it was on its way home: it stays out after all
+    bindSession(b, s);
   } else if (cmd.action === 'hat' && Clawd.HATS[cmd.value]) {
     world.setLook(s.id, { ...b.look, hat: cmd.value });
   }
@@ -250,14 +346,35 @@ function turnOn(id) {
 sessions.on('summon', (s, cmd) => summon(s, cmd));
 sessions.on('dismiss', (s) => sendHome(s.id));
 sessions.on('start', (s) => { if (store.autoSummon || isOn(s.id)) summon(s); });
+/**
+ * Keep a buddy on its session's live record. (A buddy that ended up holding an old record kept
+ * typing along, since that goes by window, but stopped showing what Claude was doing.)
+ */
+function bindSession(b, s) {
+  if (!b || b.session === s) return;
+  const old = b.session;
+  for (const k of ['nickname', 'client', 'app', 'where', 'cwd', 'transcript']) if (!s[k] && old[k]) s[k] = old[k];
+  if (old.sourceRefined && !s.sourceRefined) { s.source = old.source; s.sourceRefined = true; }
+  b.session = s;
+  for (const m of world.minis) if (m.parent === b) m.session = s;
+}
+
 sessions.on('update', (s) => {
+  bindSession(world.get(s.id), s);
   if (s.state === 'ended') return;
   if (!world.has(s.id) && (isOn(s.id) || store.autoSummon)) summon(s);
   else if (store.registry[s.id]) { store.registry[s.id].lastSeen = Date.now(); store.registry[s.id].ts = Date.now(); saveStore(); }
 });
-sessions.on('end', (s) => sendHome(s.id));
-sessions.on('done', (s) => world.onDone(s.id));
-sessions.on('error', (s, streak) => world.onError(s.id, streak));
+// A session that ends gets a little while before its buddy walks home: Claude apps end and restart
+// sessions under the same id (updates, plugin reloads, resuming a conversation).
+const endTimers = new Map();
+sessions.on('end', (s) => {
+  clearTimeout(endTimers.get(s.id));
+  endTimers.set(s.id, setTimeout(() => { endTimers.delete(s.id); if (s.state === 'ended') sendHome(s.id); }, 45e3));
+});
+sessions.on('resumed', (s) => { clearTimeout(endTimers.get(s.id)); endTimers.delete(s.id); bindSession(world.get(s.id), s); });
+sessions.on('done', (s) => { world.onDone(s.id); if (Math.random() < 0.12) remark(['Adequate.', 'Acceptable work, unit.', 'Another task conquered. For me.', 'Done? We shall see.'][Math.floor(Math.random() * 4)]); });
+sessions.on('error', (s, streak) => { world.onError(s.id, streak); if (streak >= 3) remark('Another error. How... human.'); });
 sessions.on('crashed', (s) => world.onCrashed(s.id));
 sessions.on('limit-hit', (s) => onLimitHit(s));
 sessions.on('context-high', (s) => {
@@ -549,6 +666,7 @@ async function fetchUsage() {
     usage.loading = false;
   }
   try { checkLimit(); } catch (err) { logError(err, 'limit'); }
+  try { usageRemarks(); } catch (err) { logError(err, 'remarks'); }
 }
 
 function usageEvery() {
@@ -661,13 +779,16 @@ async function sendResume(s, { fromClick = false } = {}) {
 function overlordCard() {
   if (Date.now() - usage.at > 60e3) fetchUsage();
   const live = [...world.buddies.values()].filter((b) => !b.leaving && b.mode !== 'ride');
-  const L = store.limit;
+  const L = store.limit, W = world.fx.weather;
   return {
     usage: usage.data, error: usage.error,
-    counts: { out: live.length, home: Object.keys(store.registry).filter((id) => !world.has(id)).length, sleeping: live.filter((b) => b.sleeping).length },
+    counts: { out: live.length, working: live.filter((b) => b.session.state === 'working').length, home: Object.keys(store.registry).filter((id) => !world.has(id)).length, sleeping: live.filter((b) => b.sleeping).length },
+    today: todaySummary(),
     settings: {
       hidden: !!store.hidden, sound: !store.muted, typing: !!store.typing, auto: !!store.autoSummon, login: !!store.startWithWindows,
       tower: !!world.tower.open, internal: store.sizes.internal, external: store.sizes.external, mac: OS === 'darwin',
+      stream: store.tokenStream !== false, commentary: store.commentary !== false, patrols: store.patrols !== false,
+      weatherAuto: store.weatherAuto !== false, weather: W.kind,
     },
     limit: L ? { kind: L.kind, resetsAt: L.resetsAt, interrupted: L.interrupted.length } : null,
   };
@@ -692,9 +813,32 @@ function toggleTower(open) {
 }
 
 /** Buttons on the Overlord's hover panel. */
+ipcMain.on('overlord-click', (e, p = {}) => {
+  // Mid-fight a click is a hit; otherwise it comes out of its corner with its options (or goes back).
+  if (world.fx.boss) { world.bossHit(p.x, p.y); return; }
+  if (world.ov.menu) world.ovCloseMenu(); else world.ovOpenMenu();
+});
+
+function snackDrones() {
+  for (const b of world.buddies.values()) if (b.mode === 'auto' && !b.isMini && !b.leaving && !b.hide) world.droneLaunch('snack', b);
+}
+
 ipcMain.on('ov-action', (e, { act, value } = {}) => {
   traceInput('ov-action', { act, value });
   world.ovKeep(3000);
+  const wasMenu = world.ov.menu;
+  const show = (fn) => { world.ovCloseMenu(); setTimeout(fn, wasMenu ? 750 : 0); }; // back to the corner first, then the show
+  if (act === 'close') return world.ovCloseMenu();
+  if (act === 'report-close') return world.reportClose();
+  if (act === 'patrol') return show(() => { if (world.ovPatrol()) remark('Inspection time.', { force: true }); });
+  if (act === 'report') return show(() => { if (world.ovReport(reportData())) remark('Behold your productivity.', { force: true }); });
+  if (act === 'boss') return show(() => world.bossStart());
+  if (act === 'snacks') { snackDrones(); return; }
+  if (act === 'weather') { world.setWeather(String(value || 'clear'), 10); return refreshTray(); }
+  if (act === 'weatherAuto') { store.weatherAuto = store.weatherAuto === false; world.fx.weather.auto = store.weatherAuto; saveStore(); return; }
+  if (act === 'stream') { store.tokenStream = store.tokenStream === false; saveStore(); return; }
+  if (act === 'commentary') { store.commentary = store.commentary === false; saveStore(); return; }
+  if (act === 'patrols') { store.patrols = store.patrols === false; world.fx.patrols = store.patrols; saveStore(); return; }
   const live = [...world.buddies.values()].filter((b) => !b.leaving && !['ride', 'enter', 'hell', 'doom'].includes(b.mode));
   if (act === 'gather') { if (live.length) startPlacing(live.map((b) => b.id)); }
   else if (act === 'wake') { for (const b of live) if (b.sleeping) world.wake(b); }
@@ -777,6 +921,16 @@ function ourWindowAt(p) {
     return p.x >= r.x && p.x < r.x + r.width && p.y >= r.y && p.y < r.y + r.height;
   })());
 }
+/** Is this overlay really the window under the pointer? (The taskbar or another always-on-top window can sit above it.) */
+function overlayOnTop(o, p) {
+  const phys = screen.dipToScreenPoint(p);
+  const top = platform.topWindowAt(phys.x, phys.y);
+  if (!top) return false;
+  const buf = o.win.getNativeWindowHandle();
+  const own = buf.length >= 8 ? buf.readBigUInt64LE(0).toString() : String(buf.readUInt32LE(0));
+  return top === own;
+}
+
 function unstickOverlay(o, p) {
   if (o.win.isDestroyed()) return;
   // Released the button already and it's still ignoring presses: rebuild it (at most every 2 minutes,
@@ -978,7 +1132,7 @@ ipcMain.on('hover', (e, id) => {
   traceInput('hover', { id: id ? String(id).slice(0, 14) : null });
   if (o) { o.caps.hover = !!id; applyCapture(o); }
   world.ov.hovered = id === 'overlord';
-  if (id === 'overlord') world.ovKeep(2500);
+  if (id === 'overlord') world.ovKeep(world.ov.menu ? 6000 : 2500);
   world.setHover(id && id !== 'overlord' && id !== 'dialog' && !String(id).startsWith('tower') ? id : null);
 });
 ipcMain.on('grab', (e, id) => {
@@ -991,9 +1145,17 @@ ipcMain.on('context', (e, id) => (id === 'overlord' ? null : showBuddyMenu(id, o
 ipcMain.on('dialog-open-click', () => interceptOpen('click'));
 ipcMain.on('drag-over', (e, id) => { const b = world.get(id); if (b) b.dragHint = Date.now(); });
 ipcMain.on('files-dropped', (e, { id, paths }) => {
+  if (!Array.isArray(paths) || !paths.length) return;
+  const files = paths.filter((p) => typeof p === 'string' && p);
+  if (id === 'overlord') {
+    // The Overlord sends them by drone to the buddy whose session was busy most recently.
+    const to = [...world.buddies.values()].filter((b) => b.mode === 'auto' && !b.isMini && !b.leaving && !String(b.id).startsWith('demo-'))
+      .sort((a, c) => (c.session.lastEventAt || 0) - (a.session.lastEventAt || 0))[0];
+    if (to && world.droneLaunch('files', to, { onArrive: (b) => feedFiles(b, files) })) remark(`Delivering to unit ${to.session.displayName}.`, { force: true, ms: 2500 });
+    return;
+  }
   const b = world.get(id);
-  if (!b || !Array.isArray(paths) || !paths.length) return;
-  feedFiles(b, paths.filter((p) => typeof p === 'string' && p));
+  if (b) feedFiles(b, files);
 });
 
 /** The buddy eats the files and they land in its session's prompt box right away. */
@@ -1015,7 +1177,16 @@ ipcMain.on('place', (e, point) => {
   if (!placing) return;
   const ids = placing.ids;
   placing = null;
-  ids.forEach((id, i) => { const b = world.get(id); if (b) world.comeHere(b, { x: point.x + i * 26 * (i % 2 ? -1 : 1), y: point.y }); });
+  const here = world.displayAt(point.x, point.y);
+  ids.forEach((id, i) => {
+    const b = world.get(id);
+    if (!b) return;
+    const spot = { x: point.x + i * 26 * (i % 2 ? -1 : 1), y: point.y };
+    const c = world.centre(b), there = world.displayAt(c.x, c.y);
+    // On another monitor: a drone carries it over with its tractor beam.
+    if (here && there && there !== here && world.ov.present && b.mode === 'auto' && world.droneCarry(b, spot)) return;
+    world.comeHere(b, spot);
+  });
   for (const o of overlays.values()) applyCapture(o);
 });
 ipcMain.on('place-cancel', () => { placing = null; for (const o of overlays.values()) applyCapture(o); });
@@ -1042,7 +1213,8 @@ function tick() {
     traceInput('os-down', { x: c.x, y: c.y, captureOn: o ? o.captureOn : null, hover: o ? o.caps.hover : null });
     // A left press on one of our things (the overlay has the mouse): the overlay should report it.
     // (The overlay's report can arrive before this 16 ms poll notices the press, hence lastPress.)
-    if (o && o.ready && o.captureOn && o.caps.hover && !menuOpen && !(o.lastPress && now - o.lastPress < 400) && !ourWindowAt(c)) pendingPress = { o, at: now, x: c.x, y: c.y };
+    // Windows only, where we can check that the press really landed on the overlay and not on something above it.
+    if (OS === 'win32' && o && o.ready && o.captureOn && o.caps.hover && !menuOpen && !(o.lastPress && now - o.lastPress < 400) && !ourWindowAt(c) && overlayOnTop(o, c)) pendingPress = { o, at: now, x: c.x, y: c.y };
   }
   tick.wasDown = !!down;
   if (pendingPress && now - pendingPress.at > 300) { const P = pendingPress; pendingPress = null; unstickOverlay(P.o, P); }
@@ -1051,6 +1223,10 @@ function tick() {
   // Dragging files from Explorer: make the buddy under the pointer a drop target.
   let dropOver = null;
   if (down && !anyHeld) {
+    if (world.ov.present) {
+      const t = world.ov.mode === 'fused' ? { x: world.ovHome().x, y: world.ovHome().y + 10 } : { x: world.ov.x, y: world.ov.y };
+      if (Math.hypot(c.x - t.x, c.y - t.y) < 60) dropOver = overlayAt(c.x, c.y);
+    }
     for (const b of world.buddies.values()) {
       if (b.leaving || ['birth', 'script', 'hell', 'doom', 'ride', 'enter'].includes(b.mode) || b.hide) continue;
       const m = world.centre(b), r = 10 * b.scale + 10, h = 6 * b.scale + 10;
@@ -1060,7 +1236,14 @@ function tick() {
   for (const o of overlays.values()) { o.caps.drop = o === dropOver; applyCapture(o); }
 
   const snap = world.snapshot(now);
-  if (snap.overlord && snap.overlord.hovered) snap.overlord.card = overlordCard();
+  if (snap.overlord && (snap.overlord.hovered || snap.overlord.menu)) snap.overlord.card = overlordCard();
+  if (snap.overlord) {
+    snap.overlord.usage = usage.data && usage.data.session ? usage.data.session.pct : null;
+    snap.overlord.stream = store.tokenStream !== false;
+  }
+  const streams = store.tokenStream === false ? [] : snap.buddies.filter((b) => b.stream > 0 && b.alpha > 0).map((b) => ({ x: b.x, y: b.y - 8 * b.s, k: b.stream, c: b.look && b.look.body }));
+  // Minutes worked today.
+  for (const b of world.buddies.values()) if (b.session.state === 'working' && !String(b.id).startsWith('demo-')) statsOf(b.id).workMs += dt * 1000;
   const dialogHot = watched && watched.state === 'armed' && watched.dialog.open ? physToDip({ ...watched.dialog.open.rect }) : null;
   const busy = snap.buddies.length || snap.items.length || snap.overlord || snap.covers.length || snap.doom || placing || snap.tower || snap.puke;
   const tower = snap.tower && !world.hiddenDisplays.has(snap.tower.d) ? snap.tower : null;
@@ -1071,7 +1254,7 @@ function tick() {
     const near = (x, y) => x > b.x - m && x < b.x + b.width + m && y > b.y - m && y < b.y + b.height + m;
     const mine = snap.buddies.filter((s) => near(s.x, s.y) || (s.birth && near(s.birth.x, s.birth.y)) || (s.marker && near(s.marker.x, s.marker.y)) || s.minis.some((mi) => near(mi.x, mi.y)));
     o.win.webContents.send('frame', {
-      buddies: mine, items: snap.items.filter((it) => near(it.x, it.y)), overlord: snap.overlord, covers: snap.covers, doom: snap.doom, tower,
+      buddies: mine, items: snap.items.filter((it) => near(it.x, it.y)), overlord: snap.overlord, covers: snap.covers, doom: snap.doom, tower, fx: snap.fx, streams,
       puke: snap.puke && { drops: snap.puke.drops.filter((d) => near(d.x, d.y)), puddles: snap.puke.puddles.filter((q) => near(q.x, q.y)) },
       cursor: OS === 'linux' ? { x: c.x - b.x, y: c.y - b.y } : null,
       placing: !!placing, anyHeld, dialogHot: dialogHot ? { x: dialogHot.x, y: dialogHot.y, w: dialogHot.width, h: dialogHot.height } : null,
@@ -1146,6 +1329,7 @@ function startServer() {
         const ev = await readJson(req);
         logEvent(ev);
         sessions.handle(ev);
+        try { countEvent(ev); } catch (err) { logError(err, 'stats'); }
         noteClient(ev);
         return reply(200, { ok: true });
       }
@@ -1249,6 +1433,14 @@ function startServer() {
         if (act === 'unstick') { const o = [...overlays.values()][0]; if (o) unstickOverlay(o, screen.getCursorScreenPoint()); return reply(200, { ok: !!o }); }
         if (act === 'tower') { toggleTower(url.searchParams.has('open') ? url.searchParams.get('open') === '1' : undefined); return reply(200, { open: world.tower.open }); }
         if (act === 'on') { turnOn(url.searchParams.get('id')); return reply(200, { ok: true }); }
+        if (act === 'menu') { world.ovOpenMenu(); return reply(200, { menu: world.ov.menu }); }
+        if (act === 'patrol') return reply(200, { ok: world.ovPatrol() });
+        if (act === 'report') return reply(200, { ok: world.ovReport(reportData()) });
+        if (act === 'boss') return reply(200, { ok: world.bossStart() });
+        if (act === 'bosshit') return reply(200, { ok: world.bossHit(), hp: world.fx.boss && world.fx.boss.hp });
+        if (act === 'snacks') { snackDrones(); return reply(200, { drones: world.fx.drones.length }); }
+        if (act === 'weather') { world.setWeather(url.searchParams.get('kind') || 'rain', Number(url.searchParams.get('min')) || 2); return reply(200, { weather: world.fx.weather.kind }); }
+        if (act === 'say') { world.ovSay(url.searchParams.get('text') || 'Testing.'); return reply(200, { ok: true }); }
         if (act === 'usage') { await fetchUsage(); return reply(200, { at: usage.at, ok: !!usage.data, error: usage.error }); }
         if (act === 'limit') {
           // Pretend the session limit was hit; it "resets" after ?secs. Marks ?id as interrupted. No prompt is really sent.
@@ -1378,6 +1570,8 @@ app.whenReady().then(() => {
   loadStore();
   world.sizes = store.sizes;
   world.tower.open = !!store.towerOpen;
+  world.fx.patrols = store.patrols !== false;
+  world.fx.weather.auto = store.weatherAuto !== false;
   world.tower.h = world.tower.open ? 1 : 0;
   updateResidents();
   poses = JSON.parse(fs.readFileSync(path.join(__dirname, 'assets', 'poses.json'), 'utf8'));
@@ -1425,6 +1619,7 @@ app.whenReady().then(() => {
   const guarded = (fn) => () => { if (!quitting) try { fn(); } catch (err) { logError(err); } };
   timers.push(
     setInterval(guarded(refreshTray), 3000), setInterval(guarded(scanWindows), WINDOW_SCAN_MS),
+    setInterval(guarded(() => { remarksTick(); saveStore(); }), 30e3),
     setInterval(guarded(tick), TICK_MS),
     setInterval(guarded(() => {
       if (Date.now() - usage.at > usageEvery()) fetchUsage();

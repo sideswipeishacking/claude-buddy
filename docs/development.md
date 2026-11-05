@@ -65,6 +65,8 @@ Claude Code session ──hook events──▶ scripts/buddy-hook.js ──HTTP 
 | `lib/` | Shared by the app, CLI and hook: install paths, start at login, starting the app outside the Claude app's sandbox (`launch.js`) |
 | `app/main.js` | Electron main process |
 | `app/world.js`, `app/sessions.js` | Simulation and session state (no Electron, testable in Node) |
+| `app/spectacle.js` | The Overlord's shows, mixed into `World`: its options menu, patrols, remarks, holo-report, drones, weather, boss fight |
+| `app/overlay-fx.js` | Draws those shows (and the token stream) on the overlays; particles are functions of the clock, so they cross monitors seamlessly |
 | `app/sprites.js` | Sprite engine: poses, faces, hats, accessories, animations, the Overlord |
 | `app/overlay.*`, `app/customizer.html`, `app/gallery.html` | Renderers |
 | `app/platform.js`, `win32.js`, `darwin.js`, `linux.js`, `keys.js`, `uia-helper.ps1` | OS integration |
@@ -76,10 +78,11 @@ Claude Code session ──hook events──▶ scripts/buddy-hook.js ──HTTP 
 There's no test framework. Each tool is a script that prints `PASS`/`FAIL` lines and exits non-zero on failure:
 
 ```bash
-npm test                          # features-test + climb-test + life-test
+npm test                          # features-test + climb-test + life-test + fx-smoke-test
 node tools/features-test.js       # the build, Overlord, alerts, helpers, files, dialogs, stay put, usage limit, fullscreen
 node tools/climb-test.js          # walls/ceilings, monitor crossing, per-display sizes, landings
-node tools/life-test.js           # fetch, shaking, friends chatting, the skyscraper (walking home, elevator, lights)
+node tools/life-test.js           # fetch, shaking, friends chatting, the skyscraper, sessions that carry on, the Overlord's shows
+node tools/fx-smoke-test.js       # runs every overlay-fx.js draw function against a fake canvas (catches errors, not looks)
 node tools/headless-test.js       # two simulated sessions, prints a behaviour trace
 node tools/dialog-test.js [--icons] [--app <dir>]               # Windows: opens a REAL Open dialog for a few seconds
 node_modules/electron/dist/electron.exe tools/paste-test.js     # what a Chromium text box receives from the buddy's paste

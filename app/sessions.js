@@ -240,6 +240,11 @@ class Sessions extends EventEmitter {
     if (this.recent.size > 300) for (const [k, t] of this.recent) if (now - t > 5000) this.recent.delete(k);
 
     const s = this.get(ev.session_id);
+    // A session that ended can carry on under the same id (Claude apps restart their sessions after
+    // updates and plugin reloads, and when you resume a conversation): it's the same session.
+    if (s.state === 'ended' && ev.hook_event_name !== 'SessionEnd') { s.state = 'idle'; s.endedAt = 0; this.emit('resumed', s); }
+    // Forget sessions that ended a good while ago.
+    if (this.map.size > 40) for (const [id, x] of this.map) if (x.state === 'ended' && now - x.endedAt > 3600e3) this.map.delete(id);
     s.lastEventAt = now;
     if (ev.cwd) { s.cwd = ev.cwd; s.name = projectName(ev.cwd); }
     if (ev.transcript_path) s.transcript = ev.transcript_path;
@@ -358,8 +363,8 @@ class Sessions extends EventEmitter {
       case 'SessionEnd':
         this.resolvePermission(s);
         s.state = 'ended';
-        this.emit('end', s);
-        this.map.delete(s.id);
+        s.endedAt = now;
+        this.emit('end', s); // (the record is kept: see 'resumed' above)
         break;
       default:
         break;

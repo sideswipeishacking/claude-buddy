@@ -11,7 +11,7 @@ Claude Buddy is an Electron desktop app for Windows, macOS and Linux. Pixel budd
 ```bash
 npm install
 npm start                                   # run the app from this folder
-npm test                                    # tools/features-test.js + climb-test.js + life-test.js
+npm test                                    # tools/features-test.js + climb-test.js + life-test.js + fx-smoke-test.js
 node tools/headless-test.js                 # behaviour trace for two simulated sessions
 node tools/privacy-check.js                 # personal-data scan; must pass before any commit (pre-commit hook in .githooks)
 node bin/claude-buddy.js install            # copy to the install dir, npm install, register the plugin (local marketplace)
@@ -64,7 +64,8 @@ Data flows one way: **hook → HTTP → `Sessions` → `World` → overlay rende
 
   `think()` is a priority list: hide → limit panic → reaction queue → drag hint → typing → task → hover → work/idle. `world.ov` is the Overlord and `world.doom` the usage-limit state machine. `tick()` isolates each buddy in try/catch and calls `recover()`.
   - `world.tower` is the skyscraper (bottom-left of the primary display): `goHome()` gives a buddy a `home` task, it walks in (`mode 'enter'`), leaves `world.buddies` and rides the elevator up; `leaveHome()` adds a buddy in `mode 'ride'` that appears at the door after the ride down. main.js feeds it the residents (`updateResidents()`, from the registry). Only brand-new buddies are built (printed); known ones come out of the tower.
-  - Fetch and home tasks survive grabs, file feeding and `recover()` (`keepErrand`). Idle buddies meet up (`b.meet`, `findFriend`, `meetTick`) and play a scene from `pickScene()` with `say:` lines in speech bubbles.
+  - `app/spectacle.js` is mixed into `World` (end of world.js): `world.fx` holds the Overlord's shows (menu, patrol, remarks `ovSay`, holo-report, drones, weather, boss fight). Overlord modes for shows: `patrol`, `report`, `boss`; buddies carried by a drone are in `mode 'carried'`; the boss fight is a `boss` task. `fxCancel()` stops every show when the usage limit or a new build takes over. `app/overlay-fx.js` draws them; `tools/fx-smoke-test.js` runs those draw functions in Node.
+  - Fetch and home tasks survive grabs, file feeding and `recover()` (`keepErrand`); both have no-progress escapes so they can't block the work animations forever. Idle buddies meet up (`b.meet`, `findFriend`, `meetTick`) and play a scene from `pickScene()` with `say:` lines in speech bubbles.
 - **`app/main.js`** is the Electron main process: store and registry, the HTTP server and the 60 Hz tick, per-display click-through overlays, menus, usage polling, limit detection and the resume prompt, and the Windows file-dialog watcher.
   - When an event arrives it calls `noteClient()` to resolve the session's app right away. The hook's own process is short-lived, so this can't be done lazily later.
 - **`app/platform.js`** is a façade over `win32.js` / `darwin.js` / `linux.js`, all koffi FFI:
@@ -91,4 +92,5 @@ Data flows one way: **hook → HTTP → `Sessions` → `World` → overlay rende
 - The skyscraper is drawn on whole device pixels per art pixel (`round(ts * dpr)`), the same grid sprites are rasterised on; `towerGeom()` already snaps `ts` with the display's `scale` (scaleFactor). Mixing a fractional `ts` with rasters makes wide rooms drift into the elevator shaft at 125%.
 - The Overlord has no menu any more: its hover panel (`#ovcard` in overlay.html) sends `ov-action`. Skyscraper clicks send `tower` {act: toggle | switch | room}.
 - Quitting from the panel/tray (`quitApp()`) or `claude-buddy stop` (`/quit?home=1`) sends everyone home. A plain `/quit` (what install/setup use to restart) keeps buddies active so they're restored.
+- `Sessions` keeps a session's record across `SessionEnd` (state `ended`) and revives it if the same id carries on (`resumed`): Claude apps restart sessions under the same id. main.js waits 45 s after an end before sending the buddy home, and `bindSession()` re-links a buddy to its session's live record on every event.
 - The usage-limit `RESUME_PROMPT` must only go to sessions recorded as interrupted (`StopFailure` rate_limit during or shortly before the confirmed limit).

@@ -13,6 +13,7 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const card = document.getElementById('card');
 const ovcard = document.getElementById('ovcard');
+const ovmenu = document.getElementById('ovmenu');
 const permLayer = document.getElementById('perms');
 
 let dpr = window.devicePixelRatio || 1;
@@ -24,6 +25,8 @@ let covers = [];
 let doom = null; // the usage-limit banishment, while it lasts
 let tower = null; // the skyscraper (on the main display's overlay)
 let puke = null; // someone was shaken too hard
+let fx = null; // the Overlord's shows (overlay-fx.js)
+let streams = []; // working sessions, for the token stream
 let placing = false;
 let dialogHot = null;
 let anyHeld = false;
@@ -572,9 +575,11 @@ function drawOverlord(o, elapsed) {
     const bob = o.mode === 'detached' ? Math.round(Math.sin(t / 420) * o.s * 0.6) : 0;
     const sp = ovSprite(o, t, o.s);
     const m = o.materialize === null ? Infinity : o.materialize + elapsed;
-    if (m < 1100) drawGlitch(sp, x, y, m / 1100);
+    if (o.hidden) { /* blown to bits for a moment (boss fight) */ }
+    else if (m < 1100) drawGlitch(sp, x, y, m / 1100);
     else blit(sp, x, y + bob, 1);
   }
+  fxSafe(() => drawUsageRing(o, g));
   if (topDisplay(o)) drawSeam(o, t);
   blit(memo(`sock|${g.ps}|${hovered ? 1 : Math.floor(t / 600) % 2}`, () => raster(socketPixels(hovered || Math.floor(t / 600) % 2 === 1), g.ps)), g.hx, g.top, 1);
 }
@@ -867,6 +872,15 @@ function drawSpeech(b, sp, x, y) {
   blit(bs, left - bs.ox, topY - bs.oy, b.alpha);
 }
 
+/** The Overlord's shows must never take the buddies down with them: draw them in isolation. */
+let fxFailedAt = 0;
+function fxSafe(fn) {
+  try { fn(); } catch (err) {
+    ctx.restore?.(); dev(); ctx.globalAlpha = 1;
+    if (performance.now() - fxFailedAt > 60e3) { fxFailedAt = performance.now(); console.error('overlay fx', err); }
+  }
+}
+
 // ---------------------------------------------------------------- the main loop
 function draw() {
   requestAnimationFrame(draw);
@@ -908,6 +922,7 @@ function draw() {
 
   if (tower) drawTower(tower);
   if (puke) drawPuddles(puke);
+  fxSafe(() => { if (fx) { drawWeatherBack(fx.weather); drawBossBack(fx.boss); } });
 
   for (const b of buddies) if (b.birth && b.birth.t + elapsed < BUILD.drop + 1200) drawBuildBack(b, elapsed);
 
@@ -967,9 +982,15 @@ function draw() {
 
   for (const b of buddies) if (b.birth && b.birth.t + elapsed < BUILD.effects) drawBuildFront(b, elapsed);
   if (puke) drawDrops(puke);
+  fxSafe(() => {
+    if (overlord && overlord.stream) drawStreams(streams, overlord);
+    for (const b of buddies) if (b.inspect) drawTag(b);
+    if (fx) { drawScan(fx.scan, overlord); drawDrones(fx.drones); drawBossFront(fx.boss, overlord); }
+  });
 
   if (doom) { drawPit(doom, performance.now(), true); drawBeams(doom, dt); }
   if (overlord) drawOverlord(overlord, elapsed);
+  fxSafe(() => { if (fx) { drawWeatherFront(fx.weather); drawReport(fx.report); drawOvSay(fx.say, overlord); } });
   if (doom) { drawVerdicts(doom, elapsed); drawBanner(doom, dt); }
 
   // The Open button of a watched file dialog: the buddy will eat what you picked.
@@ -991,6 +1012,7 @@ function draw() {
   if (hoverId && !grabbing && lastMouse) updateHover(lastMouse.x, lastMouse.y);
   updateCard();
   updateOvCard();
+  updateOvMenu();
   updatePermPanels();
 }
 
@@ -1101,69 +1123,118 @@ function ovButton(host, label, act, opts = {}) {
   if (opts.on !== undefined) { const i = document.createElement('i'); b.append(i); }
   b.append(document.createTextNode(label));
   if (opts.disabled) b.disabled = true;
+  if (opts.title) b.title = opts.title;
   host.append(b);
   return b;
 }
 
-let optKey = '';
+function usageRows(host, c) {
+  host.textContent = '';
+  const u = c.usage || {};
+  const rows = [['Current session (5h)', u.session], ['This week (all models)', u.week], ['This week (Opus)', u.opus], ['This week (Sonnet)', u.sonnet]].filter(([, v], i) => i < 2 || v);
+  for (const [label, v] of rows) {
+    const row = document.createElement('div');
+    row.className = 'urow';
+    const head = document.createElement('div');
+    head.className = 'uhead';
+    const l = document.createElement('span'); l.textContent = label;
+    const p = document.createElement('b'); p.textContent = v ? `${v.pct}%` : '…';
+    head.append(l, p);
+    const bar = document.createElement('div');
+    bar.className = 'ubar';
+    const fill = document.createElement('i');
+    const pct = v ? clamp(v.pct, 0, 100) : 0;
+    fill.style.width = `${pct}%`;
+    fill.style.background = pct < 50 ? '#5fd38d' : pct < 80 ? '#f2c14e' : '#f06a5d';
+    bar.append(fill);
+    const sub = document.createElement('div');
+    sub.className = 'usub';
+    sub.textContent = v && v.resets ? resetsText(v.resets) : v ? '' : c.error ? '' : 'reading your usage…';
+    row.append(head, bar, sub);
+    host.append(row);
+  }
+}
+
+/** Hovering the Overlord: your usage limits and today's numbers. Its options open when you click it. */
 function updateOvCard() {
   const o = overlord;
-  if (hoverId !== 'overlord' || !o || !o.card) { ovcard.classList.add('hidden'); ovKey = ''; optKey = ''; return; }
+  if (hoverId !== 'overlord' || !o || !o.card || o.menu || ['boss', 'report', 'patrol'].includes(o.mode)) { ovcard.classList.add('hidden'); ovKey = ''; return; }
   const c = o.card;
-  const key = JSON.stringify([c.usage, c.error, c.limit]) + Math.floor(Date.now() / 30000);
+  const key = JSON.stringify([c.usage, c.error, c.limit, c.today, c.counts]) + Math.floor(Date.now() / 30000);
   if (key !== ovKey) {
     ovKey = key;
-    const usage = ovcard.querySelector('.usage');
-    usage.textContent = '';
-    const u = c.usage || {};
-    const rows = [['Current session (5h)', u.session], ['This week (all models)', u.week], ['This week (Opus)', u.opus], ['This week (Sonnet)', u.sonnet]].filter(([, v], i) => i < 2 || v);
-    for (const [label, v] of rows) {
-      const row = document.createElement('div');
-      row.className = 'urow';
-      const head = document.createElement('div');
-      head.className = 'uhead';
-      const l = document.createElement('span'); l.textContent = label;
-      const p = document.createElement('b'); p.textContent = v ? `${v.pct}%` : '…';
-      head.append(l, p);
-      const bar = document.createElement('div');
-      bar.className = 'ubar';
-      const fill = document.createElement('i');
-      const pct = v ? clamp(v.pct, 0, 100) : 0;
-      fill.style.width = `${pct}%`;
-      fill.style.background = pct < 50 ? '#5fd38d' : pct < 80 ? '#f2c14e' : '#f06a5d';
-      bar.append(fill);
-      const sub = document.createElement('div');
-      sub.className = 'usub';
-      sub.textContent = v && v.resets ? resetsText(v.resets) : v ? '' : c.error ? '' : 'reading your usage…';
-      row.append(head, bar, sub);
-      usage.append(row);
-    }
+    usageRows(ovcard.querySelector('.usage'), c);
     const err = ovcard.querySelector('.err');
     const lim = c.limit ? `${c.limit.kind === 'week' ? 'Weekly' : 'Session'} limit reached: buddies banished until ${clockTime(c.limit.resetsAt).toLowerCase() || 'it resets'}${c.limit.resetsAt ? ` (${resetsText(c.limit.resetsAt)})` : ''}.${c.limit.interrupted ? ` ${c.limit.interrupted} will be told to resume.` : ''}` : '';
     err.textContent = lim || (c.error ? `Usage: ${c.error}` : '');
     err.classList.toggle('empty', !lim && !c.error);
+    const n = c.counts || {}, t = c.today || {};
+    ovcard.querySelector('.ovsum').textContent = `${n.working || 0} working · ${n.out || 0} out · ${n.home || 0} at home${n.sleeping ? ` · ${n.sleeping} asleep` : ''}`;
+    const grid = ovcard.querySelector('.ovstats');
+    grid.textContent = '';
+    for (const [v, label] of [[t.prompts, 'prompts'], [t.tools, 'tool calls'], [t.edits, 'files edited'], [t.minutes, 'min worked'], [t.agents, 'sub-agents'], [t.busiest || '–', 'busiest']]) {
+      const cell = document.createElement('div');
+      const b = document.createElement('b'); b.textContent = v ?? 0;
+      const sp = document.createElement('span'); sp.textContent = label;
+      cell.append(b, sp);
+      grid.append(cell);
+    }
   }
-  // Options (what used to be its menu). Rebuilt only when something changes, so clicks land.
-  const k2 = JSON.stringify([c.counts, c.settings]);
+  placeNextToOverlord(ovcard, o, 320);
+}
+
+function placeNextToOverlord(el, o, w) {
+  const h = el.offsetHeight || 360;
+  let left, top;
+  if (o.mode === 'fused') {
+    const g = ovGeom(o);
+    left = g.hx - 16 * g.ps; top = Math.max(g.top + 6 * g.ps, g.bottom) + 14;
+  } else {
+    const x = o.x - origin.x, y = o.y - origin.y;
+    left = x + 17 * o.s + 12; top = y - 40;
+    if (left + w > innerWidth - 8) left = x - 17 * o.s - 12 - w;
+  }
+  el.style.left = `${Math.round(clamp(left, 8, innerWidth - w - 8))}px`;
+  el.style.top = `${Math.round(clamp(top, 8, innerHeight - h - 8))}px`;
+  el.classList.remove('hidden');
+}
+
+/** Click the Overlord: it comes out of its corner with all of its options. */
+let optKey = '';
+function updateOvMenu() {
+  const o = overlord;
+  const here = o && o.menu && o.mode !== 'fused' && o.x - origin.x > -40 && o.x - origin.x < innerWidth + 40;
+  if (!here || !o.card) { ovmenu.classList.add('hidden'); optKey = ''; return; }
+  const c = o.card, st = c.settings || {}, n = c.counts || {};
+  const k2 = JSON.stringify([n, st]);
   if (k2 !== optKey) {
     optKey = k2;
-    const n = c.counts || {}, st = c.settings || {};
-    ovcard.querySelector('.ovsum').textContent = `${n.out || 0} out · ${n.home || 0} at home${n.sleeping ? ` · ${n.sleeping} asleep` : ''}`;
-    const acts = ovcard.querySelector('.ovacts');
+    const acts = ovmenu.querySelector('.ovacts');
     acts.textContent = '';
     ovButton(acts, 'Gather everyone', 'gather', { disabled: !n.out });
     ovButton(acts, 'Wake everyone', 'wake', { disabled: !n.sleeping });
+    ovButton(acts, 'Inspection patrol', 'patrol', { disabled: !n.out, title: 'It flies over and scans every buddy' });
+    ovButton(acts, 'Holo-report', 'report', { title: "Today's numbers, projected big" });
+    ovButton(acts, 'Snacks by drone', 'snacks', { disabled: !n.out });
+    ovButton(acts, 'Boss fight!', 'boss', { disabled: !n.out, cls: 'boss', title: 'Your buddies against the Overlord. Click it to help.' });
     ovButton(acts, st.tower ? 'Tuck the skyscraper away' : 'Show the skyscraper', 'tower');
     ovButton(acts, 'Summon a demo buddy', 'demo');
     ovButton(acts, 'Animation gallery', 'gallery');
-    const sets = ovcard.querySelector('.ovsets');
+    const wx = ovmenu.querySelector('.ovweather');
+    wx.textContent = '';
+    for (const [kind, label] of [['rain', 'Rain'], ['snow', 'Snow'], ['storm', 'Storm'], ['clear', 'Clear']]) ovButton(wx, label, 'weather', { value: kind, cls: 'chip' + (st.weather === kind ? ' sel' : '') });
+    ovButton(wx, 'Now and then', 'weatherAuto', { on: st.weatherAuto, cls: 'auto' });
+    const sets = ovmenu.querySelector('.ovsets');
     sets.textContent = '';
     ovButton(sets, 'Sound effects', 'sound', { on: st.sound });
     ovButton(sets, st.mac ? 'Type along (Input Monitoring)' : 'Type along when I type', 'typing', { on: st.typing });
+    ovButton(sets, 'Token stream to the Overlord', 'stream', { on: st.stream });
+    ovButton(sets, 'Overlord remarks', 'commentary', { on: st.commentary });
+    ovButton(sets, 'Inspection patrols now and then', 'patrols', { on: st.patrols });
     ovButton(sets, 'Buddy for every session', 'auto', { on: st.auto });
     ovButton(sets, 'Start at login', 'login', { on: st.login });
     ovButton(sets, 'Hide buddies', 'hidden', { on: st.hidden });
-    const sizes = ovcard.querySelector('.ovsizes');
+    const sizes = ovmenu.querySelector('.ovsizes');
     sizes.textContent = '';
     for (const [which, label] of [['internal', 'Laptop screen size'], ['external', 'Other monitors size']]) {
       const row = document.createElement('div');
@@ -1177,19 +1248,7 @@ function updateOvCard() {
       sizes.append(row);
     }
   }
-  const h = ovcard.offsetHeight || 420, w = 320;
-  let left, top;
-  if (o.mode === 'fused') {
-    const g = ovGeom(o);
-    left = g.hx - 16 * g.ps; top = Math.max(g.top + 6 * g.ps, g.bottom) + 10;
-  } else {
-    const x = o.x - origin.x, y = o.y - origin.y;
-    left = x + 14 * o.s + 12; top = y - 60;
-    if (left + w > innerWidth - 8) left = x - 14 * o.s - 12 - w;
-  }
-  ovcard.style.left = `${Math.round(clamp(left, 8, innerWidth - w - 8))}px`;
-  ovcard.style.top = `${Math.round(clamp(top, 8, innerHeight - h - 8))}px`;
-  ovcard.classList.remove('hidden');
+  placeNextToOverlord(ovmenu, o, 340);
 }
 
 // Floating Allow / Always / Deny above any buddy waiting on a permission.
@@ -1242,9 +1301,9 @@ const inside = (el, x, y) => { if (!el || el.classList.contains('hidden')) retur
 
 /** What's under the pointer: a buddy id, 'overlord', 'dialog', or nothing. */
 function whatsAt(mx, my) {
-  return hitTest(mx, my) || (inDialogHot(mx, my) ? 'dialog' : null) || (hitOverlord(mx, my) ? 'overlord' : null) || hitTower(mx, my);
+  return hitTest(mx, my) || (inDialogHot(mx, my) ? 'dialog' : null) || (hitReport(mx, my) ? 'report' : null) || (hitOverlord(mx, my) ? 'overlord' : null) || hitTower(mx, my);
 }
-const isBuddyId = (id) => !!id && id !== 'overlord' && id !== 'dialog' && !id.startsWith('tower');
+const isBuddyId = (id) => !!id && id !== 'overlord' && id !== 'dialog' && id !== 'report' && !id.startsWith('tower');
 
 // The cards and permission buttons count as part of what they belong to, with
 // a short grace period so you can move the mouse onto them.
@@ -1252,7 +1311,7 @@ let leaveTimer = null;
 function updateHover(mx, my) {
   let id = whatsAt(mx, my);
   if (!id && cardFor && inside(card, mx, my)) id = cardFor;
-  if (!id && inside(ovcard, mx, my)) id = 'overlord';
+  if (!id && (inside(ovcard, mx, my) || inside(ovmenu, mx, my))) id = 'overlord';
   if (!id) for (const [pid, el] of permPanels) if (inside(el, mx, my)) { id = pid; break; }
   if (id) { clearTimeout(leaveTimer); leaveTimer = null; return setHover(id); }
   if (hoverId && !leaveTimer) leaveTimer = setTimeout(() => { leaveTimer = null; setHover(null); }, 320);
@@ -1262,7 +1321,7 @@ function setHover(id) {
   if (id === hoverId) return;
   hoverId = id;
   document.body.classList.toggle('grab', isBuddyId(id));
-  document.body.classList.toggle('point', id === 'dialog' || (!!id && id.startsWith('tower:')));
+  document.body.classList.toggle('point', id === 'dialog' || id === 'overlord' || id === 'report' || (!!id && id.startsWith('tower:')));
   buddy.send('hover', id);
 }
 
@@ -1289,7 +1348,7 @@ function logInput(e) {
 for (const type of ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'click', 'contextmenu']) window.addEventListener(type, logInput, true);
 window.__buddyDebug = () => ({
   hoverId, grabbing, placing, cardFor, lastMouse, inputLog,
-  buttons: ovcard.classList.contains('hidden') ? [] : [...ovcard.querySelectorAll('.ovbtn')].map((b) => { const r = b.getBoundingClientRect(); return { act: b.dataset.act, value: b.dataset.value, x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }),
+  buttons: ovmenu.classList.contains('hidden') ? [] : [...ovmenu.querySelectorAll('.ovbtn')].map((b) => { const r = b.getBoundingClientRect(); return { act: b.dataset.act, value: b.dataset.value, x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; }),
   tower: tower && towerGeo(tower) ? (() => { const g = towerGeo(tower); return { button: g.button, n: g.n, h: tower.h }; })() : null,
 });
 
@@ -1335,7 +1394,8 @@ window.addEventListener('pointerdown', (e) => {
   if (grabbing) endGrab(); // a grab whose release we never saw
   const id = whatsAt(e.clientX, e.clientY);
   if (!id) return;
-  if (id === 'overlord') return; // its options are on its hover panel
+  if (id === 'overlord') { buddy.send('overlord-click', { x: e.clientX + origin.x, y: e.clientY + origin.y }); return; } // its options (or, mid-fight, a hit)
+  if (id === 'report') { buddy.send('ov-action', { act: 'report-close' }); return; }
   if (id === 'dialog' || id.startsWith('tower')) { pressedOn = id; return; } // acted on in 'click'
   grabbing = true;
   grabAt = performance.now();
@@ -1354,13 +1414,13 @@ let dragId = null;
 window.addEventListener('dragenter', (e) => e.preventDefault());
 window.addEventListener('dragover', (e) => {
   e.preventDefault();
-  dragId = hitTest(e.clientX, e.clientY, 12);
+  dragId = hitTest(e.clientX, e.clientY, 12) || (hitOverlord(e.clientX, e.clientY) ? 'overlord' : null); // the Overlord sends them by drone
   e.dataTransfer.dropEffect = dragId ? 'copy' : 'none';
   if (dragId && performance.now() - dragSent > 100) { dragSent = performance.now(); buddy.send('drag-over', dragId); }
 });
 window.addEventListener('drop', (e) => {
   e.preventDefault();
-  const id = hitTest(e.clientX, e.clientY, 12) || dragId;
+  const id = hitTest(e.clientX, e.clientY, 12) || (hitOverlord(e.clientX, e.clientY) ? 'overlord' : null) || dragId;
   dragId = null;
   const paths = [...(e.dataTransfer.files || [])].map((f) => buddy.pathForFile(f)).filter(Boolean);
   if (id && paths.length) buddy.send('files-dropped', { id, paths });
@@ -1405,6 +1465,7 @@ const SOUNDS = {
   sizzle: () => { for (let i = 0; i < 6; i++) tone(2400 + Math.random() * 1600, i * 0.04, 0.03, 'square', 0.015); },
   rise: () => [196, 262, 330, 392, 523].forEach((f, i) => tone(f, i * 0.12, 0.2, 'triangle', 0.05)),
   stamp: () => { tone(160, 0, 0.09, 'square', 0.06, -60); tone(880, 0.1, 0.12, 'triangle', 0.05); },
+  thunder: () => { for (let i = 0; i < 8; i++) tone(50 + Math.random() * 40, i * 0.09, 0.4, 'sawtooth', 0.035, -20); },
   chat: () => { const f = 480 + Math.random() * 380; tone(f, 0, 0.045, 'square', 0.022); tone(f * 1.25, 0.06, 0.045, 'square', 0.022); tone(f * 0.9, 0.12, 0.05, 'square', 0.022); },
   clap: () => { for (let i = 0; i < 3; i++) tone(1700 + Math.random() * 900, i * 0.02, 0.03, 'square', 0.03); },
   door: () => { tone(330, 0, 0.08, 'triangle', 0.04); tone(440, 0.09, 0.1, 'triangle', 0.04); },
@@ -1429,6 +1490,8 @@ buddy.on('frame', (data) => {
   overlord = data.overlord || null;
   covers = data.covers || [];
   doom = data.doom || null;
+  fx = data.fx || null;
+  streams = data.streams || [];
   tower = data.tower || null;
   puke = data.puke && (data.puke.drops.length || data.puke.puddles.length) ? data.puke : null;
   dialogHot = data.dialogHot || null;

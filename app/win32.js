@@ -225,6 +225,14 @@ function pixel(x, y) {
   return `#${hex(c & 0xff)}${hex((c >> 8) & 0xff)}${hex((c >> 16) & 0xff)}`;
 }
 
+/** The top-level window that gets the mouse at a point (physical px), as an id like listWindows' (click-through windows don't count). */
+function topWindowAt(x, y) {
+  if (!api) return null;
+  const at = api.WindowFromPoint({ x: Math.round(x), y: Math.round(y) });
+  const root = at && api.GetAncestor(at, 2 /* GA_ROOT */);
+  return root ? String(api.koffi.address(root)) : null;
+}
+
 /**
  * Screen colours at points (physical px) where this window is the one on top, as
  * #rrggbb. Points covered by another window are skipped (our click-through
@@ -425,6 +433,6 @@ function mouseDown() {
 }
 
 module.exports = {
-  available: !!api, listWindows, listAllAppWindows, foregroundId, foregroundInfo, postQuit, focus, mouseDown, fileDialogs, pressOpen, pixel, windowPixels,
+  available: !!api, topWindowAt, listWindows, listAllAppWindows, foregroundId, foregroundInfo, postQuit, focus, mouseDown, fileDialogs, pressOpen, pixel, windowPixels,
   setClipboard, clipboardFiles, saveClipboard, restoreClipboard, setClipboardOwner, modifiersDown, keyCombo, processTree, exePath,
 };

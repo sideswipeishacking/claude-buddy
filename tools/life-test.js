@@ -150,7 +150,7 @@ check('it rides down and steps out of the lobby', nb.mode === 'auto' && Math.abs
 T = world.towerSnapshot(now);
 check('its window goes dark', !T.floors[1].lit && T.floors[1].on);
 
-run(8000, () => nb.x > g.x0 + Clawd.TOWER.W * g.ts + 10);
+run(16000, () => nb.x > g.x0 + Clawd.TOWER.W * g.ts + 10);
 check('it walks out from in front of the building (buddies keep the lobby clear)', nb.x > g.x0 + Clawd.TOWER.W * g.ts + 10, `x=${nb.x | 0}`);
 world.goHome('bravo');
 run(500);
@@ -177,6 +177,100 @@ const placed = Clawd.roomLayout({ items: [{ k: 'bed', x: 500 }, { k: 'painting',
 check('every piece stays inside the room', placed.every((b) => b.x >= 0 && b.y >= 0 && b.x + b.w <= TT.WIN_W && b.y + b.h <= TT.WIN_H), JSON.stringify(placed.map((b) => [b.k, b.x, b.y])));
 check('little things can sit up on furniture; big furniture stands on the floor', placed.find((b) => b.k === 'cat').y === 2 && placed.find((b) => b.k === 'bed').y + placed.find((b) => b.k === 'bed').h === TT.WIN_H - 2);
 check('a dark room still draws (dimmed)', Clawd.roomPixels(undefined, false).some((p) => p.a < 1));
+
+// ---- 6. A session that ends and carries on under the same id keeps its record (the buddy stays connected).
+{
+  const ss = new Sessions();
+  let resumed = 0;
+  ss.on('resumed', () => resumed++);
+  ss.handle({ session_id: 'kept', hook_event_name: 'SessionStart', cwd: 'C:/p/x' });
+  const first = ss.get('kept');
+  ss.handle({ session_id: 'kept', hook_event_name: 'SessionEnd' });
+  check('a session that ends is marked ended, not thrown away', ss.map.get('kept') === first && first.state === 'ended');
+  now += 2000;
+  ss.handle({ session_id: 'kept', hook_event_name: 'UserPromptSubmit', prompt: 'carry on' });
+  check('…and when it carries on, it is the same record, working again', ss.get('kept') === first && first.state === 'working' && resumed === 1);
+}
+
+// ---- 7. The Overlord's shows.
+const ca = make('carol', 900, 'pixel-game'), cb = make('dave', 2600, 'claude-buddy');
+for (const x of [ca, cb]) { x.greetAt = Infinity; world.setPinned(x, true); world.setPinned(x, false); }
+world.ov.present = true; world.ov.mode = 'fused';
+world.towerToggle(false);
+check('clicking the Overlord brings it out of its corner with its options', world.ovOpenMenu() && world.ov.mode === 'detached' && world.ov.menu);
+run(600);
+check('…out in the open, clear of the top edge', world.ov.y - 13 * world.ovScale() > world.displays[0].bounds.y, `y=${world.ov.y | 0}`);
+world.ovCloseMenu();
+run(1500, () => world.ov.mode === 'fused');
+check('closing it sends it back into the corner', world.ov.mode === 'fused' && !world.ov.menu);
+
+world.ovSay('Testing.');
+check('it can make remarks (shown in a bubble)', world.snapshot(now).fx.say.text === 'TESTING.');
+run(200);
+check('…and peeks out of its corner while it talks', !!world.ovSnapshot(now).peek);
+
+check('an inspection patrol starts', world.ovPatrol([ca.id, cb.id]) && world.ov.mode === 'patrol');
+let scanned = false;
+run(20000, () => { const f = world.snapshot(now).fx; if (f.scan) scanned = true; return world.ov.mode !== 'patrol'; });
+check('…it flies over and scans each buddy', scanned);
+check('…leaving a stat tag above them', world.fx.tags.some((t) => t.id === cb.id) || scanned);
+run(3000, () => world.ov.mode === 'fused');
+check('…then goes home', ['fused', 'returning'].includes(world.ov.mode));
+
+const data = { date: 'TODAY', rows: [{ name: 'carol', prompts: 2, tools: 9, edits: 3, minutes: 12 }], totals: { prompts: 2, tools: 9, edits: 3, minutes: 12, agents: 0 }, usage: { session: 30, week: 10 } };
+check('the holo-report: it flies out and projects a panel', world.ovReport(data) && world.ov.mode === 'report');
+run(900);
+check('…the panel is in the frame', !!world.snapshot(now).fx.report);
+world.reportClose();
+check('…a click closes it', !world.fx.report && world.ov.mode === 'returning');
+run(1500);
+
+ca.task = null; cb.task = null;
+const cookiesBefore = world.items.filter((i) => i.kind === 'cookie').length;
+const dr = world.droneLaunch('snack', ca);
+check('a drone takes off from the Overlord', !!dr && world.snapshot(now).fx.drones.length === 1);
+let snacked = false;
+run(10000, () => { if (ca.react && ca.react.anim === 'snack') snacked = true; return snacked && !world.fx.drones.length; });
+check('…drops a cookie on its buddy, who eats it', snacked || world.items.filter((i) => i.kind === 'cookie').length > cookiesBefore);
+check('…and flies back', world.fx.drones.length === 0);
+
+run(3000, () => cb.mode === 'auto' && !cb.react);
+const spot = { x: 600, y: 832 };
+check('gathering across monitors: a drone picks the buddy up', !!world.droneCarry(cb, spot));
+run(15000, () => cb.mode === 'carried');
+check('…with its tractor beam', cb.mode === 'carried');
+run(20000, () => cb.mode === 'auto');
+check('…and sets it down at the spot on the other screen', cb.mode === 'auto' && Math.abs(cb.x - spot.x) < 200 && cb.y === 832, `x=${cb.x | 0} y=${cb.y}`);
+
+world.setWeather('snow', 1);
+run(7000);
+const wx = world.snapshot(now).fx.weather;
+check('weather: it can make it snow', wx && wx.kind === 'snow' && wx.k > 0.9);
+world.setWeather('rain', 1);
+run(7000);
+const brolly = run(8000, () => world.snapshot(now).buddies.some((x) => x.look.hand === 'umbrella')); // (not while one is up a wall)
+check('…or rain, and buddies get their umbrellas out', brolly);
+world.setWeather('storm', 1);
+run(9000);
+check('…or storm, with lightning', world.fx.weather.flash > 0);
+world.setWeather('clear');
+run(9000);
+check('…and clear up again', !world.snapshot(now).fx.weather);
+
+for (const x of [ca, cb]) { x.task = null; x.queue = []; x.react = null; }
+check('boss fight: it starts', world.bossStart() && world.ov.mode === 'boss' && ca.task && ca.task.type === 'boss');
+run(4000);
+check('…the buddies line up under it', world.fx.boss && world.fx.boss.phase === 'fight');
+let thrown = false, attacked = false;
+run(14000, () => { const B = world.fx.boss; if (B.shots.some((s) => s.kind === 'code')) thrown = true; if (B.shots.some((s) => s.kind === 'bug') || B.laser) attacked = true; return thrown && attacked; });
+check('…they throw code at it and it fights back', thrown && attacked);
+const hp = world.fx.boss.hp;
+world.bossHit();
+check('…your clicks hurt it', world.fx.boss.hp < hp);
+for (let i = 0; i < 40 && world.fx.boss && world.fx.boss.phase === 'fight'; i++) { world.bossHit(); run(50); }
+check('…until it is defeated', world.fx.boss && world.fx.boss.phase === 'win');
+run(6000, () => !world.fx.boss);
+check('…then it pieces itself together and goes home, and everyone is free again', !world.fx.boss && !ca.task && !cb.task && !world.ov.red);
 
 Math.random = realRandom;
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');

@@ -32,7 +32,7 @@ const LONG_WAIT_KINDS = new Set(['terminal', 'lifting', 'testing', 'servers']);
 const SHAKE = { wake: 2, dizzy: 7, sick: 20, decay: 1.6 };
 const PUKE = ['#a4c639', '#8db22c', '#c8d96f', '#6f8f1f'];
 const TW = Clawd.TOWER; // the skyscraper's layout, in art pixels
-const OFFSTAGE = new Set(['birth', 'script', 'hell', 'doom', 'ride', 'enter']); // not for grabbing, feeding or errands
+const OFFSTAGE = new Set(['birth', 'script', 'hell', 'doom', 'ride', 'enter', 'carried']); // not for grabbing, feeding or errands
 
 const LOOK_DEFAULTS = {
   hat: null, hand: null, face: null, neck: null, back: null, body: Clawd.COL.body, eye: Clawd.COL.eye, size: 1,
@@ -185,6 +185,7 @@ class World {
     // The skyscraper: one floor per buddy. h is how far it has risen out of the ground (0..1).
     this.tower = { open: false, h: 0, holdUntil: 0, residents: [], rides: [], car: { f: -1 } };
     this.puke = { drops: [], puddles: [] };
+    this.fxInit(); // the Overlord's shows (spectacle.js)
   }
 
   sound(b, name) {
@@ -350,7 +351,7 @@ class World {
       this.tower.rides = this.tower.rides.filter((r) => r.id !== id || r.dir === 'up');
       this.buddies.delete(id); this.hooks.removed?.(id); return;
     }
-    if (b.mode === 'held') { b.mode = 'air'; b.fallKind = 'drop'; }
+    if (b.mode === 'held' || b.mode === 'carried') { b.mode = 'air'; b.fallKind = 'drop'; }
     if (b.mode === 'birth') { b.mode = 'air'; b.fallKind = 'drop'; b.birth = null; if (this.ov.build === b.id) this.ovReturn(); }
     if (b.mode === 'script') { const S = b.script; b.script = null; b.stretch = 1; this.drop(b, 'drop'); S.onDone?.(); }
     b.queue = [];
@@ -635,6 +636,7 @@ class World {
     this.guard('items', () => this.tickItems(now, dt));
     this.guard('tower', () => this.towerTick(now, dt));
     this.guard('puke', () => this.tickPuke(now, dt));
+    this.guard('fx', () => this.fxTick(now, dt));
   }
 
   guard(what, fn) {
@@ -663,7 +665,7 @@ class World {
 
   tickBuddy(b, now, dt, mouseDown) {
     {
-      if (b.mode === 'hell' || b.mode === 'doom' || b.mode === 'ride') return; // banished, dragged around by the Overlord, or in the elevator
+      if (b.mode === 'hell' || b.mode === 'doom' || b.mode === 'ride' || b.mode === 'carried') return; // banished, dragged by the Overlord, in the elevator, or under a drone
       if (b.mode === 'enter') { this.enterTick(b, now); return; }
       if (b.mode === 'birth') { this.birthTick(b, now); return; }
       if (b.script) { this.scriptTick(b, now); return; }
@@ -737,6 +739,7 @@ class World {
 
   /** Called when a buddy is summoned: fly over (or materialise the first time) and build it. */
   ovBuild(b) {
+    this.fxCancel(); // a new buddy comes first
     const o = this.ov, s = this.ovScale();
     const target = { x: b.birth.cx, y: b.birth.cy - 11.5 * b.birth.big - 20 - 14 * s };
     o.build = b.id;
@@ -771,7 +774,7 @@ class World {
 
   ovReturn() {
     const o = this.ov, h = this.ovHome(), s = this.ovScale();
-    o.build = null;
+    o.build = null; o.menu = false; o.lookAt = null; o.patrol = null;
     o.mode = 'returning';
     this.ovTween({ x: h.x, y: h.y - 14 * s }, 700, () => { o.mode = 'fused'; o.nextPeek = Date.now() + 2500; }, 1);
   }
@@ -806,12 +809,13 @@ class World {
     const look = (tx, ty) => { const dx = tx - o.x, dy = ty - o.y, m = Math.hypot(dx, dy) || 1; o.lookX = clamp(dx / m, -1, 1); o.lookY = clamp(dy / m, -1, 1); };
     if (o.mode === 'building') { o.lookX *= 0.9; o.lookY = 0.85; }
     else if (o.mode === 'doom' && this.doom && this.doom.look) look(this.doom.look.x, this.doom.look.y);
+    else if (o.lookAt) look(o.lookAt.x, o.lookAt.y);
     else look(c.x, c.y);
     o.blink = (now % 4200) < 140 ? 1 - Math.abs((now % 4200) - 70) / 70 : 0;
     if (o.mode === 'detached' && now > o.holdUntil && !o.hovered) this.ovReturn();
     // Fused: every few seconds a little eye pokes out of the top-left corner and looks around.
     if (o.mode === 'fused') {
-      if (o.hovered) { if (!o.peek || !o.peek.hold) o.peek = { at: now, hold: true }; }
+      if (o.hovered || (this.fx.say && now < this.fx.say.until)) { if (!o.peek || !o.peek.hold) o.peek = { at: now, hold: true }; } // (out while it talks, too)
       else if (o.peek && o.peek.hold) o.peek = { at: now - 2300, lx: 0, ly: 0 }; // slide back up
       else if (o.peek && now - o.peek.at > 2600) { o.peek = null; o.nextPeek = now + rand(4000, 9000); }
       else if (!o.peek && now > o.nextPeek) o.peek = { at: now, lx: rand(-1, 1), ly: rand(0, 1) };
@@ -837,7 +841,8 @@ class World {
     }
     return {
       mode: o.mode, x: Math.round(o.x), y: Math.round(o.y), s: Math.round(s * (o.big || 1)), red: !!o.red, t: now, lookX: o.lookX, lookY: o.lookY, blink: o.blink,
-      materialize: o.materialize ? now - o.materialize : null, peek, hovered: o.hovered,
+      materialize: o.materialize ? now - o.materialize : null, peek, hovered: o.hovered, menu: !!o.menu,
+      hidden: !!(this.fx.boss && this.fx.boss.boom && now - this.fx.boss.boom < 1500),
       home: { x: h.x, y: h.y, w: 56, h: 44 },
       displays: this.displays.map((d) => ({ x: d.bounds.x, y: d.bounds.y, w: d.bounds.width, h: d.bounds.height })),
     };
@@ -1305,7 +1310,7 @@ class World {
     // …and keep the skyscraper's front clear (the left screen edge is a popular spot).
     const clear = !b.pinned && b.plat && !b.plat.win && b.walkTarget === null && this.towerClearX(b);
     if (clear) {
-      this.walkTo(b, clear, spd(b, 'walk'), 'walk');
+      this.walkTo(b, clear, spd(b, 'walk') * 1.6, 'walk');
       b.separating = true;
       b.action = null;
       b.setAnim('walk');
@@ -1365,6 +1370,7 @@ class World {
       return true;
     }
     if (T.type === 'home') return this.homeTask(b, T, now);
+    if (T.type === 'boss') return this.bossTask(b, T, now);
     if (T.type === 'fetch') {
       const ball = T.ball;
       if (!this.items.includes(ball)) { this.endTask(b); return false; }
@@ -1383,6 +1389,15 @@ class World {
       const target = T.phase === 'chase' ? { x: ball.x, y: ball.y } : T.home;
       const p = T.phase === 'chase' && ball.rest ? ball.rest : this.platformUnder(target.x, target.y);
       if (!p) { b.setAnim('look'); return true; }
+      // No closer for a long while (the ball is somewhere it can't get to): the ball rolls down to it,
+      // or, on the way back, it drops the ball where it is. Never stuck for good.
+      const dist = Math.abs(target.x - b.x) + Math.abs(p.y - b.y);
+      if (T.best === undefined || dist < T.best - 10) { T.best = dist; T.progressAt = now; }
+      else if (now - (T.progressAt || now) > 40e3) {
+        T.best = undefined; T.progressAt = now;
+        if (T.phase === 'return') { T.home = { x: b.x, y: b.y }; }
+        else if (b.plat) { Object.assign(ball, { rest: null, carrier: null, x: clamp(b.x + (b.x < (b.plat.x1 + b.plat.x2) / 2 ? 1 : -1) * 70, b.plat.x1 + 12, b.plat.x2 - 12), y: b.plat.y - 260, vx: 0, vy: 0 }); }
+      }
       if (!grounded) return true; // mid-leap
       if (b.plat && b.plat.key === p.key) {
         if (Math.abs(target.x - b.x) < halfW(b) * 0.8) {
@@ -1478,6 +1493,12 @@ class World {
   homeTask(b, T, now) {
     const g = this.towerGeom(), p = g && this.towerFloor(g);
     if (!p) { b.task = null; this.remove(b.id); return true; }
+    T.at = T.at || now;
+    if (now - T.at > 60e3 && b.mode === 'auto') {
+      // Can't find its way to the door: it fades out here and turns up in the elevator anyway.
+      b.task = null; b.mode = 'enter'; b.enterAt = now; this.sound(b, 'door');
+      return true;
+    }
     if (b.mode === 'wall' || b.mode === 'ceil') { this.letGo(b, 'drop'); return true; }
     if (b.mode === 'float') { this.drop(b, 'drop'); return true; }
     if (b.mode !== 'auto') return true; // in the air
@@ -1747,6 +1768,8 @@ class World {
       return;
     }
 
+    if (this.maybeSnowball(b, now)) return;
+
     // Nothing to do: go and find a friend (on any screen) to hang out with.
     if (now - b.greetAt > GREET_COOLDOWN && Math.random() < 0.6) {
       const friend = this.findFriend(b, now);
@@ -1766,7 +1789,7 @@ class World {
       b.action = { type: 'walk' };
     } else if (r < 0.40 && this.planJump(b, now)) {
       // planJump set the action
-    } else if (r < 0.56 && this.planClimb(b)) {
+    } else if (r < 0.56 && !this.isWet(now) && this.planClimb(b)) {
       // walking to a screen edge to climb it
     } else if (r < 0.62 && this.planCross(b)) {
       // wandering over to the next monitor
@@ -1837,6 +1860,7 @@ class World {
   /** Idle behaviour while hanging on a wall or the ceiling. */
   idleUp(b, now) {
     if (b.callDown && now - b.callDown < 1500) { b.callDown = 0; return this.letGo(b, 'jump'); } // a friend wants to chat: hop down
+    if (!b.pinned && this.isWet(now)) return this.letGo(b, 'jump'); // rain: down to the ground, umbrella up
     if (b.mode === 'wall') {
       if (!b.cdir && now >= b.clingUntil) {
         const next = b.pinned ? 'down' : b.climbPlan?.next || pick(['down', 'drop', 'ceil']);
@@ -2097,6 +2121,22 @@ class World {
         it.y = c.y + tall(it.carrier) * 0.15;
         continue;
       }
+      if (it.kind === 'snowball') {
+        // A snowball: flies at its target, bursts on a hit or when it lands.
+        it.vy += G * dt; it.x += it.vx * dt; it.y += it.vy * dt;
+        const T = it.target;
+        if (T && this.buddies.get(T.id) === T && T.mode === 'auto') {
+          const c = this.centre(T);
+          if (Math.abs(it.x - c.x) < halfW(T) && Math.abs(it.y - c.y) < tall(T) / 2) {
+            this.items.splice(this.items.indexOf(it), 1);
+            if (!T.react) T.push('startled', 650, { sound: 'poke' });
+            continue;
+          }
+        }
+        const fl = this.platforms.find((p) => it.x >= p.x1 && it.x <= p.x2 && it.y >= p.y && it.y - it.vy * dt <= p.y + 1);
+        if (fl || now - it.born > 3000) this.items.splice(this.items.indexOf(it), 1);
+        continue;
+      }
       if (it.kind === 'cookie' && o) {
         // The snack drops onto its buddy and gets eaten on arrival.
         it.x += (o.x - it.x) * Math.min(1, dt * 6);
@@ -2156,6 +2196,7 @@ class World {
   banish({ kind = 'session', resetsAt = null, quiet = false } = {}) {
     const now = Date.now();
     if (this.doom) { this.doom.kind = kind; this.doom.resetsAt = resetsAt; return; }
+    this.fxCancel();
     this.doom = { phase: quiet ? 'sealed' : 'alert', at: now, kind, resetsAt, pit: this.pitSpot(), open: quiet ? 0.12 : 0, cur: null, beam: null, verdicts: {}, slots: [], i: 0 };
     if (quiet) {
       for (const b of this.buddies.values()) this.toHell(b);
@@ -2383,6 +2424,13 @@ class World {
   snapshot(now) {
     const out = [];
     const short = (l, carry) => ({ hat: l.hat, hand: l.hand, face: l.face, neck: l.neck, back: l.back, body: l.body, eye: l.eye, carry: carry || undefined });
+    const W = this.fx.weather, wet = (W.kind === 'rain' || W.kind === 'storm') && this.weatherLevel(now) > 0.3; // umbrellas out
+    const tagOf = (b) => {
+      const t = this.fx.tags.find((x) => x.id === b.id);
+      if (!t) return null;
+      const c = b.session.card(), st = this.hooks.stats?.(b.id) || {};
+      return { k: (now - t.at) / (t.until - t.at), name: b.session.displayName, status: c.status, ctx: c.context ? c.context.pct : null, mins: Math.round((st.workMs || 0) / 60e3), tools: st.tools || 0, edits: st.edits || 0 };
+    };
     for (const b of this.buddies.values()) {
       if (b.mode === 'hell' || b.mode === 'ride') continue;
       try {
@@ -2401,7 +2449,9 @@ class World {
         anim: b.anim,
         t: now - b.animAt,
         fo: b.anim === 'typing' ? b.taps : undefined, // typing frames advance per key, not per tick
-        look: short(b.look, b.carry),
+        look: wet && !b.look.hand && (b.mode === 'auto' || b.mode === 'float') ? { ...short(b.look, b.carry), hand: 'umbrella' } : short(b.look, b.carry),
+        stream: s.state === 'working' && this.ov.present ? Math.max(0.35, 1 - (now - (this.fx.pulses.get(b.id) || 0)) / 4000) : 0,
+        inspect: tagOf(b),
         stretch: b.stretch !== 1 ? b.stretch : undefined,
         pinned: b.pinned,
         held: b.mode === 'held',
@@ -2414,7 +2464,7 @@ class World {
         sleeping: b.sleeping || undefined,
         hovered: b.hovered,
         birth: b.birth ? { t: now - b.birth.at, x: Math.round(b.birth.cx), y: Math.round(b.birth.cy), big: b.birth.big } : null,
-        interactive: !['birth', 'script', 'doom', 'enter'].includes(b.mode) && !b.hide && alpha > 0,
+        interactive: !['birth', 'script', 'doom', 'enter', 'carried'].includes(b.mode) && !b.hide && alpha > 0,
         soot: b.soot ? Math.max(0, Math.min(1, (b.soot.until - now) / 9000)) : 0,
         perm: s.attention === 'permission' && s.pendingPermission ? { ...s.pendingPermission, held: !!s.permHeld } : null,
         minis: this.minis.filter((m) => m.parent === b).map((m) => ({
@@ -2434,8 +2484,12 @@ class World {
     } : null;
     let tower = null;
     try { tower = this.towerSnapshot(now); } catch (err) { this.hooks.error?.(err, 'tower snapshot'); }
-    return { buddies: out, items, overlord: this.ovSnapshot(now), covers: this.covers.filter((c) => c.p > 0), doom: this.doomSnapshot(now), tower, puke };
+    let fx = null;
+    try { fx = this.fxSnapshot(now); } catch (err) { this.hooks.error?.(err, 'fx snapshot'); }
+    return { buddies: out, items, overlord: this.ovSnapshot(now), covers: this.covers.filter((c) => c.p > 0), doom: this.doomSnapshot(now), tower, puke, fx };
   }
 }
+
+Object.assign(World.prototype, require('./spectacle')({ G, clamp, rand, pick, halfW, tall, spd }));
 
 module.exports = { World, fullLook, LOOK_DEFAULTS };

@@ -68,12 +68,22 @@ If an app is running **fullscreen** (a game, a video, a presentation), buddies o
 
 Every brand-new buddy gets built by **the Overlord**: a mechanical eye that, afterwards, lives in the **top edge of your screen**. Every now and then it peeks out of the top-left corner to look around.
 
-**Hover the top-left corner** for the Overlord's panel:
+**Hover the top-left corner** for its card: your **current session (5-hour) usage** and **weekly usage** with reset times, how many buddies are working, out and at home, and **today's numbers** (prompts, tool calls, files edited, minutes worked, sub-agents, your busiest buddy).
 
-- your **current session (5-hour) usage** and **weekly usage**, with reset times;
-- **actions**: gather everyone at a spot, wake everyone up, show or tuck away the skyscraper, a demo buddy, the animation gallery;
-- **settings**: sounds, typing along, a buddy for every session, start at login, hide buddies, and the pixel size on the laptop screen and on other monitors;
+**Click it** and it comes all the way out of its corner with its options:
+
+- **Gather everyone** at a spot. Buddies on another monitor get flown over by drone.
+- **Wake everyone**.
+- **Inspection patrol**: it flies over and scans each buddy, leaving a little holographic read-out above it. It also does this by itself now and then.
+- **Holo-report**: today's numbers per buddy, projected big. Click it to close.
+- **Snacks by drone**.
+- **Boss fight!** Your buddies take on the Overlord; click it to help them land hits.
+- **Weather**: rain, snow or a thunderstorm (or let it decide now and then).
+- Show or tuck away the skyscraper, a demo buddy, the animation gallery.
+- **Settings**: sounds, typing along, the token stream (glowing data flowing from busy buddies into the Overlord), its remarks, patrols, a buddy for every session, start at login, hide buddies, and the pixel sizes.
 - **Quit** (everyone goes home first).
+
+Drop files on the Overlord and a drone delivers them to the buddy that was busy most recently.
 
 And if you ever hit your usage limit… well. You'll see.
 

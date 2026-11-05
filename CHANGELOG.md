@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.3.0
+
+- **The Overlord, hover vs click.** Hovering it shows only your usage limits, who's working / out / home / asleep, and today's numbers (prompts, tool calls, files edited, minutes worked, sub-agents, busiest buddy). Clicking it brings it all the way out of its corner with every option.
+- **New Overlord shows:**
+  - **Token stream**: glowing data flows from every working buddy into the Overlord, and a ring around its eye (or a meter by its corner) shows your session usage.
+  - **Inspection patrols**: it flies over and scans each buddy, leaving a holographic read-out (status, context, today's numbers). Now and then by itself, or from its options.
+  - **Remarks**: dry comments about your usage, late nights, loafing buddies and more.
+  - **Holo-report**: today's numbers per buddy, projected across the screen.
+  - **Drones**: snacks for everyone, files dropped on the Overlord delivered to the most recently busy buddy, and buddies on other monitors flown over when you gather them.
+  - **Weather**: rain, snow and thunderstorms (pick one, or let it happen now and then). Buddies put up umbrellas, snow settles on windows, and idle buddies have snowball fights.
+  - **Boss fight**: your buddies take on the Overlord for a minute; click it to help.
+- **Fixed:** a buddy could stop showing what Claude was doing (while typing along still worked) after its session was restarted by the Claude app under the same id. Sessions now carry on as the same session, a session that ends waits 45 seconds before its buddy walks home, and buddies are re-linked to their session on every event.
+- **Fixed:** a game of fetch or the walk home could, in rare cases, keep a buddy busy for good; both now find a way to finish.
+- **Fixed:** the click safety net from 2.1.1 could mistake a click on the taskbar (or another always-on-top window) above a buddy for a missed click and rebuild the overlay. It now checks what is really under the pointer.
+
 ## 2.2.0
 
 - **A wider skyscraper** (about 2.4x as wide) with rooms you furnish yourself: wall and floor colours, curtains, and up to 10 pieces from 40 (beds, desks, a gaming setup, couches, bookshelves, a piano, an aquarium, a server rack, plants, a cat, paintings, a neon sign, fairy lights, rugs…). Drag them where you want them; little things can sit on furniture and wall decor can hang at any height. Rooms decorated in 2.1 keep their look.
