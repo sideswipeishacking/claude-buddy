@@ -84,7 +84,7 @@ Buddies don't vanish when they're off duty: they live in **the skyscraper** at t
 - It's tucked into the ground until you want it. **Click the little roof** that peeks out to bring it up; the **▼ button** on the roof tucks it away again. It also pops up by itself whenever someone comes or goes.
 - A **lit window** means that buddy is home; a **dark** one means it's out on your desktop.
 - The **switch** on the left of each floor turns that buddy on (it rides down and heads out to work) or off (it walks home and rides up).
-- **Click a window** to decorate the room: wall colour, curtains, a piece of furniture and something for the window sill. (Also in the Workshop's **Room** tab.)
+- **Click a window** to furnish the room (or open the Workshop's **Room** tab): wall and floor colours, curtains, and up to 10 pieces of furniture and decor. Pick a piece to add it, then drag it where you want it. Little things (a plant, a lamp, the cat) and wall decor can go up and down too, so they can sit on a desk or hang anywhere on the wall. While it's home, the buddy strolls around its room.
 
 Only brand-new buddies get built by the Overlord; ones you've met before simply come out of the skyscraper.
 

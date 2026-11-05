@@ -1040,45 +1040,149 @@
 
   // The skyscraper: every buddy has a floor. Sizes in art pixels (the renderer scales them).
   // BODY is the building itself; the glass elevator shaft (SHAFT_X, SHAFT_W wide) hangs on its right side.
-  const TOWER = { W: 38, BODY: 30, FLOOR: 16, LOBBY: 14, ROOF: 10, PEEK: 9, WIN_X: 5, WIN_Y: 2, WIN_W: 22, WIN_H: 11, SHAFT_X: 30, SHAFT_W: 8, SWITCH_X: 1, DOOR_X: 4, DOOR_W: 8, DOOR_H: 11 };
+  // (2.2: about 2.4x as wide as before, so the rooms have space for real furniture.)
+  const TOWER = {
+    W: 92, BODY: 84, FLOOR: 16, LOBBY: 14, ROOF: 10, PEEK: 9, WIN_X: 5, WIN_Y: 2, WIN_W: 74, WIN_H: 11,
+    SHAFT_X: 84, SHAFT_W: 8, SWITCH_X: 1, DOOR_X: 4, DOOR_W: 8, DOOR_H: 11, ANT_X: 8, BTN_X: 72, MAX_ITEMS: 10,
+  };
+  const FLOOR_ROWS = 2; // the bottom rows of a room are its floor
+
+  // Room decor. Items have a layer: 'floor' (stands on the floor), 'wall' (hangs; y is adjustable) or
+  // 'rug' (lies on the floor). Rows use the same palette-letter format as hats.
   const ROOM = {
-    walls: { cream: '#f6e3b4', mint: '#cdeccf', rose: '#f4c7cf', sky: '#c9e4f7', lilac: '#dccdf3', sand: '#ecd9b8' },
-    curtains: { red: '#d6455d', blue: '#3e6cff', green: '#3aa76d', gold: '#e8b04b', lace: '#f2f2f2', purple: '#8a63d2' },
-    furniture: {
-      bed: { pal: { W: '#8b5a3c', P: '#5aa9e6', p: '#ffffff', B: '#6b4a2e' }, rows: ['W       ', 'WppPPPPP', 'WPPPPPPP', 'BBBBBBBB', 'B      B'] },
-      desk: { pal: { K: '#2f2f38', C: '#3fd0ff', B: '#8b5a3c' }, rows: ['  KKKK  ', '  KCCK  ', '   KK   ', 'BBBBBBBB', 'B      B', 'B      B'] },
-      couch: { pal: { R: '#d6455d', r: '#9e2f44' }, rows: [' RRRRRR ', 'RRRRRRRR', 'RrrrrrrR', 'R      R'] },
-      bookshelf: { pal: { B: '#8b5a3c', R: '#d6455d', G: '#3aa76d', Y: '#ffc431' }, rows: ['BBBBBB', 'BRGYRB', 'BBBBBB', 'BYRGYB', 'BBBBBB', 'B    B'] },
-      plant: { pal: { G: '#37a34f', T: '#c96f22' }, rows: ['  G  ', ' GGG ', 'GG GG', ' GGG ', '  G  ', ' TTT ', ' TTT '] },
-      arcade: { pal: { K: '#4b3fa0', C: '#3fd0ff', R: '#d6455d', Y: '#ffe12e' }, rows: ['KKKKK', 'KCCCK', 'KCCCK', 'KKKKK', 'KRYKK', 'KKKKK', 'KKKKK'] },
-      beanbag: { pal: { P: '#e46fa8', p: '#b04a80' }, rows: ['  PPPP  ', ' PPPPPP ', 'PPPPPPPP', 'pppppppp'] },
+    walls: {
+      cream: '#f6e3b4', mint: '#cdeccf', rose: '#f4c7cf', sky: '#c9e4f7', lilac: '#dccdf3', sand: '#ecd9b8',
+      peach: '#f8cfb0', sage: '#b9d3b0', slate: '#9aa6b8', night: '#3b4466', brick: '#c9765b', white: '#f4f1ea',
     },
-    sill: {
-      cactus: { pal: { G: '#4fbf6a', T: '#c96f22' }, rows: [' G ', 'GGG', ' G ', 'TTT'] },
-      flower: { pal: { P: '#e46fa8', G: '#37a34f', T: '#c96f22' }, rows: ['P P', ' G ', 'TTT'] },
-      cat: { pal: { K: '#3b3743' }, rows: ['K K ', 'KKK ', 'KKKK'] },
-      fishbowl: { pal: { C: '#9fe0f5', O: '#f2994a' }, rows: [' CC ', 'COCC', ' CC '] },
-      lamp: { pal: { Y: '#ffe08a', K: '#3b3743' }, rows: ['YYY', ' K ', ' K ', 'KKK'] },
-      trophy: { pal: { Y: '#ffc431' }, rows: ['Y Y', 'YYY', ' Y ', 'YYY'] },
+    floors: { wood: '#a8794f', oak: '#c49a6c', walnut: '#6b4a2e', tiles: '#d9d4c7', stone: '#8d857e', carpet: '#7a5c9c', moss: '#5f8f4a' },
+    curtains: { red: '#d6455d', blue: '#3e6cff', green: '#3aa76d', gold: '#e8b04b', lace: '#f2f2f2', purple: '#8a63d2' },
+    items: {
+      // ---- furniture
+      bed: { layer: 'floor', pal: { W: '#8b5a3c', P: '#5aa9e6', p: '#ffffff', B: '#6b4a2e' }, rows: ['W         ', 'WppPPPPPPP', 'WPPPPPPPPP', 'BBBBBBBBBB', 'B        B'] },
+      bunkbed: { layer: 'floor', pal: { W: '#8b5a3c', P: '#e46fa8', G: '#3aa76d', p: '#ffffff' }, rows: ['W       W', 'WppPPPPPW', 'WWWWWWWWW', 'W       W', 'WppGGGGGW', 'WWWWWWWWW', 'W       W'] },
+      desk: { layer: 'floor', pal: { K: '#2f2f38', C: '#3fd0ff', B: '#8b5a3c' }, rows: ['  KKKK  ', '  KCCK  ', '   KK   ', 'BBBBBBBB', 'B      B', 'B      B'] },
+      gamingdesk: { layer: 'floor', pal: { K: '#2f2f38', C: '#3fd0ff', P: '#e46fa8', R: '#d6455d' }, rows: [' KKKK KKKK ', ' KCCK KPPK ', '  KK   KK  ', 'RRRRRRRRRRR', 'K         K', 'K         K'] },
+      chair: { layer: 'floor', pal: { B: '#8b5a3c' }, rows: ['B   ', 'B   ', 'BBBB', 'B  B'] },
+      table: { layer: 'floor', pal: { B: '#8b5a3c', W: '#ffffff', R: '#d6455d' }, rows: ['  R W  ', 'BBBBBBB', ' B   B ', ' B   B '] },
+      couch: { layer: 'floor', pal: { R: '#d6455d', r: '#9e2f44' }, rows: [' RRRRRRRR ', 'RRRRRRRRRR', 'RrrrrrrrrR', 'R        R'] },
+      armchair: { layer: 'floor', pal: { G: '#3aa76d', g: '#2a7f53' }, rows: [' GGGG ', 'GGGGGG', 'GggggG', 'G    G'] },
+      beanbag: { layer: 'floor', pal: { P: '#e46fa8', p: '#b04a80' }, rows: ['  PPPP  ', ' PPPPPP ', 'PPPPPPPP', 'pppppppp'] },
+      bookshelf: { layer: 'floor', pal: { B: '#8b5a3c', R: '#d6455d', G: '#3aa76d', Y: '#ffc431', U: '#3e6cff' }, rows: ['BBBBBBB', 'BRGYURB', 'BBBBBBB', 'BYURGYB', 'BBBBBBB', 'BGRUYRB', 'BBBBBBB', 'B     B'] },
+      dresser: { layer: 'floor', pal: { B: '#b07a4a', Y: '#ffc431' }, rows: ['BBBBBB', 'BYBBYB', 'BBBBBB', 'BYBBYB', 'BBBBBB', 'B    B'] },
+      fridge: { layer: 'floor', pal: { W: '#e9eef2', g: '#8a95a8', s: '#c9d1d9' }, rows: ['WWWWW', 'WWWWg', 'WWWWW', 'sssss', 'WWWWW', 'WWWWg', 'WWWWW', 'WWWWW'] },
+      tv: { layer: 'floor', pal: { K: '#2f2f38', C: '#3fd0ff', B: '#8b5a3c' }, rows: ['KKKKKKKK', 'KCCCCCCK', 'KCCCCCCK', 'KKKKKKKK', '   KK   ', 'BBBBBBBB', 'B      B'] },
+      arcade: { layer: 'floor', pal: { K: '#4b3fa0', C: '#3fd0ff', R: '#d6455d', Y: '#ffe12e' }, rows: ['KKKKK', 'KCCCK', 'KCCCK', 'KKKKK', 'KRYKK', 'KKKKK', 'KKKKK', 'KKKKK'] },
+      piano: { layer: 'floor', pal: { K: '#2f2f38', W: '#ffffff' }, rows: ['KKKKKKKKK', 'KKKKKKKKK', 'WKWKWWKWK', 'WWWWWWWWW', 'K       K', 'K       K'] },
+      guitar: { layer: 'floor', pal: { K: '#3b2a20', R: '#d6455d', r: '#9e2f44' }, rows: ['  K', '  K', ' K ', 'RRR', 'RrR', 'RRR', ' R '] },
+      server: { layer: 'floor', pal: { K: '#2f2f38', G: '#37d351', Y: '#ffe12e' }, rows: ['KKKK', 'KGKK', 'KKKK', 'KGYK', 'KKKK', 'KGKK', 'KKKK', 'K  K'] },
+      aquarium: { layer: 'floor', pal: { K: '#3b3743', C: '#9fe0f5', O: '#f2994a', G: '#37a34f', B: '#8b5a3c' }, rows: ['KKKKKKK', 'KCCCCCK', 'KCCOCCK', 'KGCCCOK', 'KKKKKKK', 'B     B', 'B     B'] },
+      cattree: { layer: 'floor', pal: { P: '#c9a27a', T: '#8b5a3c', K: '#3b3743' }, rows: ['K K ', 'PPP ', ' T  ', 'PPPP', ' T  ', ' T  ', 'TTTT'] },
+      floorlamp: { layer: 'floor', pal: { Y: '#ffe08a', K: '#3b3743' }, rows: ['YYYY', ' K  ', ' K  ', ' K  ', ' K  ', ' K  ', ' K  ', 'KKK '] },
+      // ---- little things
+      plant: { layer: 'floor', small: true, pal: { G: '#37a34f', T: '#c96f22' }, rows: ['  G  ', ' GGG ', 'GG GG', ' GGG ', '  G  ', ' TTT ', ' TTT '] },
+      cactus: { layer: 'floor', small: true, pal: { G: '#4fbf6a', T: '#c96f22' }, rows: [' G ', 'GGG', ' G ', 'TTT'] },
+      flower: { layer: 'floor', small: true, pal: { P: '#e46fa8', G: '#37a34f', T: '#c96f22' }, rows: ['P P', ' G ', 'TTT'] },
+      cat: { layer: 'floor', small: true, pal: { K: '#3b3743' }, rows: ['K K ', 'KKK ', 'KKKK'] },
+      fishbowl: { layer: 'floor', small: true, pal: { C: '#9fe0f5', O: '#f2994a' }, rows: [' CC ', 'COCC', ' CC '] },
+      lamp: { layer: 'floor', small: true, pal: { Y: '#ffe08a', K: '#3b3743' }, rows: ['YYY', ' K ', ' K ', 'KKK'] },
+      trophy: { layer: 'floor', small: true, pal: { Y: '#ffc431' }, rows: ['Y Y', 'YYY', ' Y ', 'YYY'] },
+      // ---- on the wall
+      painting: { layer: 'wall', y: 1, pal: { K: '#8b5a3c', S: '#9ad7f0', G: '#37a34f', Y: '#ffe12e' }, rows: ['KKKKKKK', 'KSSSSYK', 'KSGSSSK', 'KGGGSGK', 'KKKKKKK'] },
+      poster: { layer: 'wall', y: 1, pal: { O: '#d97757', K: '#2f2f38', W: '#fff1e6' }, rows: ['OOOOO', 'OKOKO', 'OOOOO', 'OOWOO', 'O O O'] },
+      clock: { layer: 'wall', y: 1, pal: { K: '#3b3743', W: '#fff6e8' }, rows: [' KKK ', 'KWKWK', 'KWKKK', 'KWWWK', ' KKK '] },
+      shelf: { layer: 'wall', y: 3, pal: { B: '#8b5a3c', R: '#d6455d', G: '#3aa76d', Y: '#ffc431', U: '#3e6cff' }, rows: ['RGY U', 'RGYUU', 'BBBBB'] },
+      neon: { layer: 'wall', y: 1, pal: { C: '#3fd0ff' }, rows: ['  C  CC  ', ' C   C C ', 'C   C   C', ' C C   C ', '  CC  C  '] },
+      diploma: { layer: 'wall', y: 1, pal: { W: '#fff6e8', K: '#8d857e', R: '#d6455d' }, rows: ['WWWWW', 'WKKKW', 'WWWRW', 'WWWWW'] },
+      mirror: { layer: 'wall', y: 1, pal: { S: '#bfe6ff', W: '#ffffff', K: '#8b5a3c' }, rows: [' KKK ', 'KSWSK', 'KSSWK', 'KSSSK', ' KKK '] },
+      pennant: { layer: 'wall', y: 1, pal: { R: '#d97757', W: '#ffffff' }, rows: ['RRRRRRR', ' RWRWR ', '  RRR  ', '   R   '] },
+      window: { layer: 'wall', y: 1, pal: { K: '#8b5a3c', S: '#9ad7f0', W: '#ffffff' }, rows: ['KKKKKKK', 'KSSKSWK', 'KSSKSSK', 'KKKKKKK', 'KSSKSSK', 'KKKKKKK'] },
+      fairylights: { layer: 'wall', y: 0, pal: { k: '#5a5450', Y: '#ffe12e', R: '#ff3b99', C: '#3fd0ff', G: '#37d351' }, rows: ['kkkkkkkkkkkkkkk', ' Y  R  C  G  Y '] },
+      // ---- on the floor
+      rug: { layer: 'rug', pal: { R: '#d6455d', r: '#9e2f44' }, rows: ['RRRRRRRRRRRRRR', 'rRrRrRrRrRrRrR'] },
+      bluerug: { layer: 'rug', pal: { B: '#3e6cff', W: '#c9e4f7' }, rows: [' BBBBBBBBBBBB ', 'BWBWBWBWBWBWBW'] },
+      mat: { layer: 'rug', pal: { G: '#3aa76d' }, rows: ['GGGGGGGG'] },
     },
   };
-  const DEFAULT_ROOM = { wall: 'cream', curtains: null, furniture: 'bed', sill: null };
+  const ITEM_GROUPS = {
+    furniture: ['bed', 'bunkbed', 'desk', 'gamingdesk', 'chair', 'table', 'couch', 'armchair', 'beanbag', 'bookshelf', 'dresser', 'fridge', 'tv', 'arcade', 'piano', 'guitar', 'server', 'aquarium', 'cattree', 'floorlamp'],
+    little: ['plant', 'cactus', 'flower', 'cat', 'fishbowl', 'lamp', 'trophy'],
+    wall: ['painting', 'poster', 'clock', 'shelf', 'neon', 'diploma', 'mirror', 'pennant', 'window', 'fairylights'],
+    rugs: ['rug', 'bluerug', 'mat'],
+  };
+  const itemSize = (def) => ({ w: Math.max(...def.rows.map((r) => r.length)), h: def.rows.length });
+  const DEFAULT_ROOM = { wall: 'cream', floor: 'wood', curtains: null, items: [{ k: 'plant', x: 3 }, { k: 'painting', x: 33, y: 1 }, { k: 'rug', x: 24 }, { k: 'bed', x: 62 }] };
+
+  /**
+   * A room's decor in the current format: { wall, floor, curtains, items: [{ k, x, y? }] } with every
+   * item clamped inside the room. Rooms saved by 2.1 (one `furniture` and one `sill` thing) are converted.
+   */
+  function normalizeRoom(room) {
+    const r = room || {};
+    const W = TOWER.WIN_W, H = TOWER.WIN_H;
+    let items;
+    if (Array.isArray(r.items)) items = r.items;
+    else if (room && ('furniture' in r || 'sill' in r || 'wall' in r)) {
+      items = [];
+      if (r.sill && ROOM.items[r.sill]) items.push({ k: r.sill, x: 3 });
+      const f = r.furniture === undefined ? 'bed' : r.furniture;
+      if (f && ROOM.items[f]) items.push({ k: f, x: W - itemSize(ROOM.items[f]).w - 2 });
+    } else items = DEFAULT_ROOM.items;
+    const out = [];
+    for (const it of items) {
+      const def = it && ROOM.items[it.k];
+      if (!def || out.length >= TOWER.MAX_ITEMS) continue;
+      const { w, h } = itemSize(def);
+      const x = Math.max(0, Math.min(W - w, Math.round(Number(it.x) || 0)));
+      const o = { k: it.k, x };
+      if (def.layer === 'wall') o.y = Math.max(0, Math.min(H - FLOOR_ROWS - h - 1, Math.round(Number(it.y ?? def.y) || 0)));
+      else if (def.small && it.y !== undefined && it.y !== null) o.y = Math.max(0, Math.min(H - FLOOR_ROWS - h, Math.round(Number(it.y) || 0))); // on top of something
+      out.push(o);
+    }
+    return {
+      wall: ROOM.walls[r.wall] ? r.wall : DEFAULT_ROOM.wall,
+      floor: ROOM.floors[r.floor] ? r.floor : DEFAULT_ROOM.floor,
+      curtains: ROOM.curtains[r.curtains] ? r.curtains : null,
+      items: out,
+    };
+  }
+
+  /** Where each item sits in the room: [{ i, k, x, y, w, h, layer }] (also used for dragging in the Workshop). */
+  function roomLayout(room) {
+    const r = normalizeRoom(room), H = TOWER.WIN_H;
+    return r.items.map((it, i) => {
+      const def = ROOM.items[it.k], { w, h } = itemSize(def);
+      const y = def.layer === 'wall' ? it.y : def.layer === 'rug' ? H - h : it.y ?? H - FLOOR_ROWS - h;
+      return { i, k: it.k, x: it.x, y, w, h, layer: def.layer };
+    });
+  }
 
   /** A room seen through its window (TOWER.WIN_W × WIN_H), lit (home) or dark (out at work). */
   function roomPixels(room, lit) {
-    const r = { ...DEFAULT_ROOM, ...(room || {}) };
+    const r = normalizeRoom(room);
     const W = TOWER.WIN_W, H = TOWER.WIN_H, out = [];
     const put = (x, y, c, a = 1) => { if (x >= 0 && y >= 0 && x < W && y < H) out.push({ x, y, c, a }); };
-    const wall = lit ? ROOM.walls[r.wall] || ROOM.walls.cream : '#1b2333';
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) put(x, y, y >= H - 2 ? (lit ? '#a8794f' : '#141a26') : wall);
-    if (!lit) { for (let i = 0; i < 6; i++) put(3 + i, 1 + i, '#2c3a52'); for (let i = 0; i < 4; i++) put(5 + i, 1 + i, '#2c3a52'); } // moonlit glass
-    const art = (def, ox, oy, dim) => def.rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== ' ') put(ox + x, oy + y, def.pal[ch], dim ? 0.35 : 1); }));
-    const f = r.furniture && ROOM.furniture[r.furniture];
-    if (f) art(f, W - f.rows[0].length - 1, H - 2 - f.rows.length, !lit);
-    const sill = r.sill && ROOM.sill[r.sill];
-    if (sill) art(sill, 1, H - 2 - sill.rows.length, !lit);
+    const wall = lit ? ROOM.walls[r.wall] : '#1b2333';
+    const floor = lit ? ROOM.floors[r.floor] : '#141a26';
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) put(x, y, y >= H - FLOOR_ROWS ? floor : wall);
+    if (lit) for (let x = 0; x < W; x++) put(x, H - FLOOR_ROWS - 1, '#000000', 0.08); // skirting shadow
+    else for (let i = 0; i < 6; i++) { put(3 + i, 1 + i, '#2c3a52'); put(5 + i, 1 + i, '#2c3a52'); put(41 + i, 1 + i, '#2c3a52'); } // moonlit glass
+    const layout = roomLayout(r);
+    const draw = (b) => ROOM.items[b.k].rows.forEach((row, y) => [...row].forEach((ch, x) => {
+      const c = ROOM.items[b.k].pal[ch];
+      if (ch !== ' ' && c) put(b.x + x, b.y + y, c, lit ? 1 : 0.35);
+    }));
+    for (const layer of ['rug', 'wall', 'floor']) layout.filter((b) => b.layer === layer).forEach(draw);
     const cur = r.curtains && ROOM.curtains[r.curtains];
-    if (cur) for (let y = 0; y < H - 2; y++) for (const x of [0, 1, W - 2, W - 1]) put(x, y, cur, lit ? 1 : 0.5);
+    if (cur) for (let y = 0; y < H - FLOOR_ROWS; y++) for (const x of [0, 1, 2, W - 3, W - 2, W - 1]) put(x, y, cur, (lit ? 1 : 0.5) * (x === 2 || x === W - 3 ? 0.7 : 1));
+    return out;
+  }
+
+  /** One item on its own (Workshop tiles). */
+  function roomItemPixels(k) {
+    const def = ROOM.items[k];
+    if (!def) return [];
+    const out = [];
+    def.rows.forEach((row, y) => [...row].forEach((ch, x) => { if (ch !== ' ' && def.pal[ch]) out.push({ x, y, c: def.pal[ch], a: 1 }); }));
     return out;
   }
 
@@ -1108,7 +1212,7 @@
   }
 
   return {
-    SCALE, ROLE, COL, ANIMS: A, ACTIVITY_ANIMS, HATS, HAT_ORDER, ACCESSORIES, SLOTS, COLORS, EYE_COLORS, FONT, OV, TOWER, ROOM, DEFAULT_ROOM, roomPixels,
+    SCALE, ROLE, COL, ANIMS: A, ACTIVITY_ANIMS, HATS, HAT_ORDER, ACCESSORIES, SLOTS, COLORS, EYE_COLORS, FONT, OV, TOWER, ROOM, ITEM_GROUPS, DEFAULT_ROOM, roomPixels, roomLayout, roomItemPixels, normalizeRoom,
     loadPoses, frame, bubble, mini, item, text, overlord, fileKind,
     frameCount: (name) => (A[name] || A.idle).frames || 1,
     fps: (name) => (A[name] || A.idle).fps || 6,

@@ -75,6 +75,7 @@ b.pinned = false;
 run(2000);
 
 // ---- 2. Alerts only when a prompt is really on screen.
+world.setPinned(b, true); run(3000, () => b.mode === 'auto' || b.mode === 'float'); // a bubble can't show mid-hop
 ev('hatch', 'UserPromptSubmit', { prompt: 'do things' });
 ev('hatch', 'PreToolUse', { tool_name: 'AskUserQuestion', tool_input: {} });
 run(200);
@@ -102,6 +103,7 @@ run(500);
 check('the 60 s "waiting for input" notice does not bring back a !', s1.attention === 'done' && b.bubble !== '!' && b.bubble !== '?', b.bubble);
 world.setHover('hatch'); run(600); world.setHover(null); run(100);
 check('✓ stays until you hover it', b.bubble === null && b.ackDone);
+world.setPinned(b, false);
 
 // ---- 3. Helpers follow their buddy, including up a wall.
 ev('hatch', 'UserPromptSubmit', { prompt: 'use helpers' });
@@ -298,6 +300,7 @@ run(4000, () => b.mode === 'auto');
 const d2 = world.displays[1].id;
 world.hiddenDisplays.add(d2);
 s1.attention = null; b.ackDone = true;
+world.setPinned(b, true); // stays on the fullscreen monitor for these checks
 const vis = () => (world.snapshot(now).buddies.find((x) => x.id === b.id) || {}).alpha;
 check('over a fullscreen app it stays hidden normally', vis() === 0);
 s1.attention = 'permission'; s1.attentionSince = now;
@@ -309,8 +312,9 @@ check('…and when its context is about to compact (90%)', vis() > 0);
 run(13000);
 check('…then it hides again', vis() === 0);
 world.hiddenDisplays.clear();
-run(500);
+world.setPinned(b, true); run(3000, () => (b.mode === 'auto' || b.mode === 'float') && !b.react);
 check('the context alert keeps a % bubble on the buddy', b.bubble === 'ctx', b.bubble);
+world.setPinned(b, false);
 s1.context = { used: 50000, size: 200000, pct: 25 }; s1.ctxAlertAt = 0;
 
 // The usage limit.

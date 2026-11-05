@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.0
+
+- **A wider skyscraper** (about 2.4x as wide) with rooms you furnish yourself: wall and floor colours, curtains, and up to 10 pieces from 40 (beds, desks, a gaming setup, couches, bookshelves, a piano, an aquarium, a server rack, plants, a cat, paintings, a neon sign, fairy lights, rugs…). Drag them where you want them; little things can sit on furniture and wall decor can hang at any height. Rooms decorated in 2.1 keep their look.
+- Buddies at home stroll around their rooms.
+- **Fixed:** at 125% display scaling the rooms were drawn slightly wider than the building.
+
 ## 2.1.1
 
 - **Fixed:** buddies, the Overlord's panel and the skyscraper could stop taking left-clicks (right-clicks and hovering still worked) until Claude Buddy was restarted. Skyscraper buttons now act when you let go of the mouse rather than when you press it, the overlay never turns click-through in the middle of a click, and if an overlay ever stops seeing left presses anyway, Claude Buddy notices and resets it on its own (the event is noted in `error.log`).

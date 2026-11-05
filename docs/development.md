@@ -107,7 +107,7 @@ To test on Linux without a desktop, run with `CLAUDE_BUDDY_OZONE=headless`: Elec
 ## Adding hats, accessories and animations
 
 - Hats live in `HATS` / `HAT_ORDER` in `app/sprites.js`, as small pixel grids with a palette. Accessories are in `ACCESSORIES` (hand, face, neck, back).
-- The skyscraper's layout is `TOWER` (art pixels) and room decor is `ROOM` (walls, curtains, furniture, sill) in `app/sprites.js`; `roomPixels()` draws a room. `World` owns the tower state (`tower`, `goHome`, `leaveHome`, the elevator rides) and `overlay.js` draws it (`drawTower`).
+- The skyscraper's layout is `TOWER` (art pixels) and room decor is `ROOM` (walls, floors, curtains, items with a `floor` / `wall` / `rug` layer) in `app/sprites.js`. A room is `{ wall, floor, curtains, items: [{ k, x, y? }] }`; `normalizeRoom()` clamps it (and converts 2.1 rooms), `roomLayout()` places the items and `roomPixels()` draws it. `World` owns the tower state (`tower`, `goHome`, `leaveHome`, the elevator rides) and `overlay.js` draws it (`drawTower`).
 - Conversation lines are in `pickScene()` in `app/world.js`. They're drawn in the 3x5 pixel font (`FONT` in `sprites.js`), so they have to stay upper-case and short.
 - Animations are entries in `ANIMS` (a pose or procedural map, a face, fps, frame count and `fx` effects). `ACTIVITY_ANIMS` maps what Claude is doing to sets of animations.
 - `node tools/preview.js out.png [hat]` renders every animation into a contact sheet; the Animation gallery in the app shows them live.

@@ -958,7 +958,7 @@ function rebuildOverlays() {
   const owner = [...overlays.values()][0];
   if (owner) platform.setClipboardOwner(owner.win.getNativeWindowHandle()); // Windows: what we paste needs an owner window
   const primary = screen.getPrimaryDisplay().id;
-  world.setDisplays(displays.map((d) => ({ id: d.id, bounds: d.bounds, workArea: d.workArea, internal: !!d.internal, primary: d.id === primary })));
+  world.setDisplays(displays.map((d) => ({ id: d.id, bounds: d.bounds, workArea: d.workArea, internal: !!d.internal, primary: d.id === primary, scale: d.scaleFactor || 1 })));
 }
 
 // Debug: what reached the main process from the overlays, and when capture flipped (read by /debug/overlay).
@@ -1207,6 +1207,20 @@ function startServer() {
         // Inject a mouse click straight into the overlay under (x, y) in DIPs (no real mouse involved).
         const x = Number(url.searchParams.get('x')), y = Number(url.searchParams.get('y'));
         const button = url.searchParams.get('button') === 'right' ? 'right' : 'left';
+        if (url.searchParams.get('win') === 'workshop') {
+          // Into the open Workshop instead, at window-relative DIPs (or a key press: &key=Right).
+          const w = [...workshops.values()].find((x) => !x.isDestroyed() && x.isVisible());
+          if (!w) return reply(404, { error: 'no workshop open' });
+          const key = url.searchParams.get('key');
+          if (key) { w.webContents.sendInputEvent({ type: 'keyDown', keyCode: key }); w.webContents.sendInputEvent({ type: 'keyUp', keyCode: key }); return reply(200, { ok: true, key }); }
+          const x2 = url.searchParams.has('x2') ? Number(url.searchParams.get('x2')) : null;
+          w.webContents.sendInputEvent({ type: 'mouseMove', x, y });
+          w.webContents.sendInputEvent({ type: 'mouseDown', x, y, button, clickCount: 1 });
+          if (x2 !== null) for (let i = 1; i <= 8; i++) { await new Promise((r) => setTimeout(r, 30)); w.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(x + ((x2 - x) * i) / 8), y }); }
+          await new Promise((r) => setTimeout(r, 60));
+          w.webContents.sendInputEvent({ type: 'mouseUp', x: x2 ?? x, y, button, clickCount: 1 });
+          return reply(200, { ok: true });
+        }
         const o = overlayAt(x, y);
         if (!o) return reply(404, { error: 'no overlay there' });
         const lx = Math.round(x - o.display.bounds.x), ly = Math.round(y - o.display.bounds.y), wc = o.win.webContents;

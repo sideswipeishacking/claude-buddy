@@ -166,6 +166,18 @@ world.towerToggle(false);
 run(1500);
 check('…and tucked away again', world.tower.h === 0);
 
+// ---- 5. Rooms: wider, with furniture you place yourself.
+const TT = Clawd.TOWER;
+check('the skyscraper is wider, but no more than 2.5x the original 38 pixels', TT.W > 38 && TT.W <= 95, `W=${TT.W}`);
+const legacy = Clawd.normalizeRoom({ wall: 'mint', curtains: 'red', furniture: 'desk', sill: 'cat' });
+check('a room decorated in 2.1 keeps its wall, curtains, furniture and sill thing', legacy.wall === 'mint' && legacy.curtains === 'red' && legacy.items.map((i) => i.k).join() === 'cat,desk');
+const crowded = Clawd.normalizeRoom({ items: Array.from({ length: 15 }, (_, i) => ({ k: 'chair', x: i * 7 })).concat([{ k: 'bed', x: 500 }, { k: 'painting', x: -9, y: 40 }, { k: 'nope', x: 3 }]) });
+check(`at most ${TT.MAX_ITEMS} pieces, unknown ones dropped`, crowded.items.length === TT.MAX_ITEMS && crowded.items.every((i) => Clawd.ROOM.items[i.k]));
+const placed = Clawd.roomLayout({ items: [{ k: 'bed', x: 500 }, { k: 'painting', x: -9, y: 40 }, { k: 'cat', x: 20, y: 2 }, { k: 'rug', x: 10 }] });
+check('every piece stays inside the room', placed.every((b) => b.x >= 0 && b.y >= 0 && b.x + b.w <= TT.WIN_W && b.y + b.h <= TT.WIN_H), JSON.stringify(placed.map((b) => [b.k, b.x, b.y])));
+check('little things can sit up on furniture; big furniture stands on the floor', placed.find((b) => b.k === 'cat').y === 2 && placed.find((b) => b.k === 'bed').y + placed.find((b) => b.k === 'bed').h === TT.WIN_H - 2);
+check('a dark room still draws (dimmed)', Clawd.roomPixels(undefined, false).some((p) => p.a < 1));
+
 Math.random = realRandom;
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

@@ -1419,7 +1419,8 @@ class World {
     const d = this.displays.find((x) => x.primary) || this.displays[0];
     if (!d) return null;
     const base = Number(d.internal ? this.sizes.internal : this.sizes.external) || BASE_SCALE;
-    const ts = clamp(Math.round(base * 0.75), 2, 4);
+    // One art pixel in DIPs as it really appears: a whole number of device pixels (2.4 at 125%, not 2).
+    const sf = Number(d.scale) || 1, ts = Math.max(1, Math.round(clamp(Math.round(base * 0.75), 2, 4) * sf)) / sf;
     const ground = this.floorY(d);
     const x0 = d.workArea.x + 10;
     const room = ground - (d.workArea.y + 90) - (TW.LOBBY + TW.ROOF) * ts;

@@ -58,14 +58,24 @@
   .spacer { flex: 1; }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px; }
   .scroll::-webkit-scrollbar { width: 10px; } .scroll::-webkit-scrollbar-thumb { background: var(--line); border: 2px solid var(--panel); }
-  .roomview { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 12px; }
-  .roomview canvas { image-rendering: pixelated; border: 3px solid #000; box-shadow: 0 0 0 2px #1d1a24; background: #1d1a24; }
-  .roomview .note { font: 11px Consolas, monospace; color: var(--muted); line-height: 1.5; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-  .chip { min-width: 64px; padding: 4px 6px 3px; background: #181420; border: 2px solid #000; box-shadow: inset 0 0 0 2px #2c2539; cursor: pointer; text-align: center; font: 11px Consolas, monospace; color: var(--muted); text-transform: capitalize; }
-  .chip canvas { display: block; margin: 0 auto 2px; image-rendering: pixelated; }
-  .chip:hover { box-shadow: inset 0 0 0 2px var(--muted); }
-  .chip.sel { box-shadow: inset 0 0 0 3px var(--gold); color: var(--gold); background: #2a2214; }
+  .roomedit { margin-bottom: 12px; }
+  .roomedit canvas { display: block; image-rendering: pixelated; border: 3px solid #000; box-shadow: 0 0 0 2px #1d1a24; background: #1d1a24; touch-action: none; }
+  .roomedit canvas.dragging { cursor: grabbing !important; }
+  .roombar { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 7px; min-height: 28px; font: 11px Consolas, monospace; color: var(--muted); }
+  .roombar .selname { color: var(--gold); font-weight: 700; text-transform: capitalize; margin-right: 4px; }
+  .roombar .selname.hint { text-transform: none; font-weight: 400; color: var(--muted); }
+  .roombar .count { margin-left: auto; }
+  .mini-btn { padding: 4px 8px 3px; border: 2px solid #000; background: #3a2f4d; color: var(--ink); font: 700 11px Consolas, monospace; cursor: pointer; box-shadow: inset -2px -2px 0 rgba(0,0,0,.35), inset 2px 2px 0 rgba(255,255,255,.1); }
+  .mini-btn:hover { filter: brightness(1.2); }
+  .swrow { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+  .swatch { width: 26px; height: 26px; border: 2px solid #000; cursor: pointer; box-shadow: inset -3px -3px 0 rgba(0,0,0,.2), inset 3px 3px 0 rgba(255,255,255,.2); }
+  .swatch.sel { outline: 3px solid var(--gold); outline-offset: 1px; }
+  .swatch.none { background: repeating-linear-gradient(45deg, #2b2438, #2b2438 4px, #3d3450 4px, #3d3450 8px); }
+  .palette { display: grid; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 6px; margin-bottom: 12px; }
+  .ptile { background: #181420; border: 2px solid #000; box-shadow: inset 0 0 0 2px #2c2539; cursor: pointer; text-align: center; padding: 6px 2px 4px; font: 10.5px Consolas, monospace; color: var(--muted); text-transform: capitalize; }
+  .ptile:hover { box-shadow: inset 0 0 0 2px var(--muted); color: var(--ink); }
+  .ptile canvas { display: block; margin: 0 auto 4px; image-rendering: pixelated; }
+  .ptile.full { opacity: .4; cursor: default; }
   .danger { margin-top: 6px; padding: 7px 12px 6px; border: 2px solid #000; background: #3a1f1f; color: #f6c1bb; font: 700 11px Consolas, monospace; letter-spacing: 1px; cursor: pointer; }
   .danger.armed { background: #f06a5d; color: #1a0606; }
 </style>
@@ -305,51 +315,182 @@ function render() {
 }
 
 // ---------------------------------------------------------------- its room in the skyscraper
-function roomCanvas(room, scale, withBuddy) {
-  const T = Clawd.TOWER, cv = document.createElement('canvas');
-  cv.width = (T.WIN_W + 2) * scale * dpr; cv.height = (T.WIN_H + 2) * scale * dpr;
-  cv.style.width = cv.width / dpr + 'px'; cv.style.height = cv.height / dpr + 'px';
-  paint(cv, Clawd.roomPixels(room, true), scale * dpr, scale * dpr, scale * dpr);
-  if (withBuddy) paint(cv, Clawd.mini(0, look.body).pixels, scale * dpr, (T.WIN_X + 4) * scale * dpr, (T.WIN_H - 1) * scale * dpr);
-  return cv;
+// A room editor: pick walls, floor and curtains, add furniture from the palette, drag pieces
+// where you want them (little things and wall decor can go up and down too), remove what you don't.
+const ROOM_SCALE = 7;
+const roomK = () => Math.max(1, Math.round(ROOM_SCALE * dpr)); // device pixels per art pixel (whole, so outlines line up)
+let roomSel = -1; // index of the selected item in look.room.items
+let roomDrag = null;
+
+const roomNow = () => (look.room = Clawd.normalizeRoom(look.room));
+const itemDef = (k) => Clawd.ROOM.items[k];
+const itemW = (k) => Math.max(...itemDef(k).rows.map((r) => r.length));
+const canLift = (k) => itemDef(k).layer === 'wall' || !!itemDef(k).small;
+const nice = (k) => k.replace(/([a-z])([A-Z])/g, '$1 $2');
+
+function drawRoom(cv) {
+  const T = Clawd.TOWER, s = roomK(), room = roomNow(), g = cv.getContext('2d');
+  g.fillStyle = '#1d1a24'; g.fillRect(0, 0, cv.width, cv.height);
+  paint(cv, Clawd.roomPixels(room, true), s, s, s);
+  paint(cv, Clawd.mini(0, look.body).pixels, s, s + 12 * s, s + (T.WIN_H - 2) * s);
+  const b = Clawd.roomLayout(room).find((x) => x.i === roomSel);
+  if (b) {
+    g.strokeStyle = '#ffc431'; g.lineWidth = 2 * dpr; g.setLineDash([4 * dpr, 3 * dpr]);
+    g.strokeRect(s + b.x * s - 3 * dpr, s + b.y * s - 3 * dpr, b.w * s + 6 * dpr, b.h * s + 6 * dpr);
+    g.setLineDash([]);
+  }
 }
 
-function chips(host, options, current, choose, preview) {
+/** Topmost item under a point in room pixels (floor things in front of wall things in front of rugs). */
+function roomHit(p) {
+  const L = Clawd.roomLayout(roomNow());
+  const order = ['floor', 'wall', 'rug'].flatMap((layer) => L.filter((b) => b.layer === layer).reverse());
+  return order.find((b) => p.x >= b.x && p.x < b.x + b.w && p.y >= b.y && p.y < b.y + b.h) || null;
+}
+
+function moveItem(i, dx, dy) {
+  const room = roomNow(), it = room.items[i];
+  if (!it) return;
+  it.x += dx;
+  if (dy && canLift(it.k)) it.y = (it.y ?? Clawd.roomLayout(room).find((b) => b.i === i).y) + dy;
+  roomNow();
+}
+
+function addItem(k) {
+  const room = roomNow(), T = Clawd.TOWER, def = itemDef(k), w = itemW(k);
+  if (room.items.length >= T.MAX_ITEMS) return;
+  // The first free spot from the left among things on the same layer, else the middle.
+  const same = Clawd.roomLayout(room).filter((b) => b.layer === def.layer);
+  let x = null;
+  for (let cx = 2; cx <= T.WIN_W - w - 2 && x === null; cx++) if (same.every((b) => cx + w + 1 <= b.x || cx >= b.x + b.w + 1)) x = cx;
+  room.items.push({ k, x: x ?? Math.round((T.WIN_W - w) / 2), ...(def.layer === 'wall' ? { y: def.y } : {}) });
+  roomNow();
+  roomSel = look.room.items.length - 1;
+  changed();
+}
+
+function removeItem(i) {
+  const room = roomNow();
+  room.items.splice(i, 1);
+  roomSel = -1;
+  changed();
+}
+
+function randomRoom() {
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)], R = Clawd.ROOM, G = Clawd.ITEM_GROUPS;
+  look.room = { wall: pick(Object.keys(R.walls)), floor: pick(Object.keys(R.floors)), curtains: Math.random() < 0.5 ? pick(Object.keys(R.curtains)) : null, items: [] };
+  roomSel = -1;
+  const want = [pick(G.furniture), pick(G.furniture), pick(G.furniture), pick(G.little), pick(G.wall), pick(G.wall)];
+  if (Math.random() < 0.6) want.unshift(pick(G.rugs));
+  for (const k of want) {
+    const room = roomNow(), w = itemW(k), def = itemDef(k);
+    const same = Clawd.roomLayout(room).filter((b) => b.layer === def.layer);
+    for (let tries = 0; tries < 30; tries++) {
+      const x = 1 + Math.floor(Math.random() * (Clawd.TOWER.WIN_W - w - 2));
+      if (same.every((b) => x + w + 1 <= b.x || x >= b.x + b.w + 1)) { room.items.push({ k, x, ...(def.layer === 'wall' ? { y: def.y } : {}) }); break; }
+    }
+  }
+  roomNow();
+}
+
+function swatchRow(host, colours, current, choose, allowNone) {
   const row = document.createElement('div');
-  row.className = 'chips';
-  for (const key of options) {
-    const c = document.createElement('div');
-    c.className = 'chip' + ((current || null) === key ? ' sel' : '');
-    if (preview) c.append(preview(key));
-    c.append(document.createTextNode(key || 'none'));
-    c.onclick = () => { choose(key); changed(); };
-    row.append(c);
+  row.className = 'swrow';
+  for (const key of [...(allowNone ? [null] : []), ...Object.keys(colours)]) {
+    const sw = document.createElement('div');
+    sw.className = 'swatch' + (key === null ? ' none' : '') + ((current || null) === key ? ' sel' : '');
+    if (key) sw.style.background = colours[key];
+    sw.title = key || 'none';
+    sw.onclick = () => { choose(key); changed(); };
+    row.append(sw);
   }
   host.append(row);
 }
 
+function palette(host, keys, full) {
+  const grid = document.createElement('div');
+  grid.className = 'palette';
+  for (const k of keys) {
+    const t = document.createElement('div');
+    t.className = 'ptile' + (full ? ' full' : '');
+    const px = Clawd.roomItemPixels(k), w = itemW(k), h = itemDef(k).rows.length, s = Math.max(1, Math.round((w > 11 ? 3 : 4) * dpr));
+    const cv = document.createElement('canvas');
+    cv.width = w * s; cv.height = h * s;
+    cv.style.width = cv.width / dpr + 'px'; cv.style.height = cv.height / dpr + 'px';
+    paint(cv, px, s, 0, 0);
+    t.append(cv, document.createTextNode(nice(k)));
+    t.title = full ? 'The room is full: remove something first' : `Add ${nice(k)}`;
+    t.onclick = () => { if (!full) addItem(k); };
+    grid.append(t);
+  }
+  host.append(grid);
+}
+
 function renderRoom(body) {
   body.className = 'scroll';
-  const room = { ...Clawd.DEFAULT_ROOM, ...(look.room || {}) };
-  const set = (k, v) => { look.room = { ...room, [k]: v }; };
-  const view = document.createElement('div');
-  view.className = 'roomview';
-  view.append(roomCanvas(room, 9, true));
-  const note = document.createElement('div');
-  note.className = 'note';
-  note.innerHTML = 'Its floor in the skyscraper<br>(bottom-left of your main screen).<br><br>The light is on while it\'s home.<br>Flip the switch beside the<br>window to send it to work.';
-  view.append(note);
-  body.append(view);
+  const room = roomNow(), T = Clawd.TOWER, G = Clawd.ITEM_GROUPS;
   const h = (t) => { const e = document.createElement('h3'); e.textContent = t; body.append(e); };
-  const small = (r) => roomCanvas(r, 3, false);
-  h('WALLS');
-  chips(body, Object.keys(Clawd.ROOM.walls), room.wall, (k) => set('wall', k), (k) => small({ ...room, wall: k, furniture: null, sill: null, curtains: null }));
-  h('CURTAINS');
-  chips(body, [null, ...Object.keys(Clawd.ROOM.curtains)], room.curtains, (k) => set('curtains', k), (k) => small({ ...room, curtains: k, furniture: null, sill: null }));
-  h('FURNITURE');
-  chips(body, [null, ...Object.keys(Clawd.ROOM.furniture)], room.furniture, (k) => set('furniture', k), (k) => small({ ...room, furniture: k, sill: null, curtains: null }));
-  h('ON THE WINDOW SILL');
-  chips(body, [null, ...Object.keys(Clawd.ROOM.sill)], room.sill, (k) => set('sill', k), (k) => small({ ...room, sill: k, furniture: null, curtains: null }));
+  if (roomSel >= room.items.length) roomSel = -1;
+
+  const edit = document.createElement('div');
+  edit.className = 'roomedit';
+  const cv = document.createElement('canvas');
+  const K = roomK(), css = K / dpr; // CSS pixels per art pixel
+  cv.width = (T.WIN_W + 2) * K; cv.height = (T.WIN_H + 2) * K;
+  cv.style.width = cv.width / dpr + 'px'; cv.style.height = cv.height / dpr + 'px';
+  const at = (e) => ({ x: e.offsetX / css - 1, y: e.offsetY / css - 1 });
+  cv.onpointerdown = (e) => {
+    const b = roomHit(at(e));
+    roomSel = b ? b.i : -1;
+    if (b) { const p = at(e); roomDrag = { i: b.i, dx: p.x - b.x, dy: p.y - b.y, moved: false }; cv.setPointerCapture(e.pointerId); cv.classList.add('dragging'); }
+    drawRoom(cv); updateBar();
+  };
+  cv.onpointermove = (e) => {
+    if (!roomDrag) { cv.style.cursor = roomHit(at(e)) ? 'grab' : 'default'; return; }
+    const p = at(e), it = roomNow().items[roomDrag.i], b = Clawd.roomLayout(look.room).find((x) => x.i === roomDrag.i);
+    const nx = Math.round(p.x - roomDrag.dx), ny = Math.round(p.y - roomDrag.dy);
+    if (nx !== b.x || (canLift(it.k) && ny !== b.y)) { moveItem(roomDrag.i, nx - b.x, canLift(it.k) ? ny - b.y : 0); roomDrag.moved = true; drawRoom(cv); }
+  };
+  cv.onpointerup = () => { if (roomDrag && roomDrag.moved) changed(false); roomDrag = null; cv.classList.remove('dragging'); };
+  edit.append(cv);
+
+  const bar = document.createElement('div');
+  bar.className = 'roombar';
+  edit.append(bar);
+  const btn = (label, title, fn) => { const b = document.createElement('button'); b.className = 'mini-btn'; b.textContent = label; b.title = title; b.onclick = fn; return b; };
+  function updateBar() {
+    bar.textContent = '';
+    const it = roomNow().items[roomSel];
+    const name = document.createElement('span');
+    name.className = it ? 'selname' : 'selname hint';
+    name.textContent = it ? nice(it.k) : 'Click a piece to move it, or add one below';
+    bar.append(name);
+    if (it) {
+      const nudge = (dx, dy) => () => { moveItem(roomSel, dx, dy); drawRoom(cv); changed(false); };
+      bar.append(btn('◀', 'Left (← key)', nudge(-1, 0)), btn('▶', 'Right (→ key)', nudge(1, 0)));
+      if (canLift(it.k)) bar.append(btn('▲', 'Up (↑ key)', nudge(0, -1)), btn('▼', 'Down (↓ key)', nudge(0, 1)));
+      bar.append(btn('TO FRONT', 'Draw it in front of the others', () => { const r = roomNow(); r.items.push(r.items.splice(roomSel, 1)[0]); roomSel = r.items.length - 1; changed(); }));
+      bar.append(btn('REMOVE', 'Remove it (Delete key)', () => removeItem(roomSel)));
+    }
+    const count = document.createElement('span');
+    count.className = 'count';
+    count.textContent = `${roomNow().items.length}/${T.MAX_ITEMS}`;
+    bar.append(count, btn('CLEAR', 'Take everything out', () => { roomNow().items = []; roomSel = -1; changed(); }));
+  }
+  updateBar();
+  drawRoom(cv);
+  body.append(edit);
+
+  const set = (k, v) => { look.room = { ...roomNow(), [k]: v }; };
+  h('WALLS'); swatchRow(body, Clawd.ROOM.walls, room.wall, (k) => set('wall', k));
+  h('FLOOR'); swatchRow(body, Clawd.ROOM.floors, room.floor, (k) => set('floor', k));
+  h('CURTAINS'); swatchRow(body, Clawd.ROOM.curtains, room.curtains, (k) => set('curtains', k), true);
+  const full = room.items.length >= T.MAX_ITEMS;
+  h('FURNITURE'); palette(body, G.furniture, full);
+  h('LITTLE THINGS (DRAG THEM ONTO FURNITURE)'); palette(body, G.little, full);
+  h('ON THE WALL'); palette(body, G.wall, full);
+  h('RUGS'); palette(body, G.rugs, full);
+
   const out = document.createElement('button');
   out.className = 'danger';
   out.textContent = 'MOVE OUT (FORGET THIS BUDDY)';
@@ -358,6 +499,16 @@ function renderRoom(body) {
     buddy.send('buddy-forget');
   };
   body.append(out);
+}
+
+/** Arrow keys nudge the selected piece, Delete removes it. Returns true when it handled the key. */
+function roomKey(e) {
+  if (tab !== 'room' || roomSel < 0 || !roomNow().items[roomSel] || document.activeElement?.tagName === 'INPUT') return false;
+  const step = e.shiftKey ? 4 : 1;
+  const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+  if (d) { moveItem(roomSel, d[0], d[1]); changed(); return true; }
+  if (e.key === 'Delete' || e.key === 'Backspace') { removeItem(roomSel); return true; }
+  return false;
 }
 
 function changed(rerender = true) {
@@ -373,10 +524,7 @@ function randomize() {
   look.body = Math.random() < 0.4 ? Clawd.COL.body : pick(Object.values(Clawd.COLORS));
   look.helper.body = Math.random() < 0.5 ? look.body : pick(Object.values(Clawd.COLORS));
   look.helper.hat = maybe(Clawd.HAT_ORDER, 0.6);
-  if (tab === 'room') {
-    const R = Clawd.ROOM;
-    look.room = { wall: pick(Object.keys(R.walls)), curtains: maybe(Object.keys(R.curtains), 0.6), furniture: pick(Object.keys(R.furniture)), sill: maybe(Object.keys(R.sill), 0.7) };
-  }
+  if (tab === 'room') randomRoom();
   changed();
 }
 
@@ -384,6 +532,7 @@ buddy.on('init', (d) => {
   Clawd.loadPoses(d.poses);
   look = clone(d.look);
   original = clone(d.look);
+  roomSel = -1;
   sizes = d.sizes;
   asDefault = d.isDefault;
   if (d.tab && TABS.some(([k]) => k === d.tab)) tab = d.tab;
@@ -404,6 +553,7 @@ buddy.on('init', (d) => {
   document.getElementById('cancel').onclick = close;
   document.getElementById('close').onclick = close;
   window.addEventListener('keydown', (e) => {
+    if (roomKey(e)) { e.preventDefault(); return; }
     if (e.key === 'Escape') close();
     if (e.key === 'Enter' && document.activeElement !== nick) save();
   });

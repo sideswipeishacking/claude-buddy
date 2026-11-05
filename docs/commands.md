@@ -71,7 +71,9 @@ The tower at the bottom-left of your main screen has one floor per buddy you've 
 | **The switch** left of a floor | Turn that buddy on (it rides down and heads out) or send it home |
 | **A window** | Decorate that room (opens the Workshop's Room tab) |
 
-A lit window means the buddy is home. In the Room tab, **Move out** forgets a buddy for good.
+A lit window means the buddy is home.
+
+**The Room tab** (in the Workshop): add furniture, little things, wall decor and rugs from the palette (up to 10 pieces), then click a piece to select it and drag it around. Arrow keys nudge it (Shift for bigger steps), **Delete** removes it, **To front** draws it in front of the others. **Move out** forgets a buddy for good.
 
 ## The tray icon
 

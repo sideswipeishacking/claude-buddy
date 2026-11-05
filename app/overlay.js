@@ -611,7 +611,7 @@ function towerGeo(T) {
   const roofTop = by - total;
   return {
     ts, n, bx, ground, by, off, total, roofTop, floorTop,
-    button: { x: bx + 20 * ts, y: roofTop + 2 * ts, w: 8 * ts, h: 7 * ts },
+    button: { x: bx + TW.BTN_X * ts, y: roofTop + 2 * ts, w: 8 * ts, h: 7 * ts },
     win: (i) => ({ x: bx + TW.WIN_X * ts, y: floorTop(i) + TW.WIN_Y * ts, w: TW.WIN_W * ts, h: TW.WIN_H * ts }),
     sw: (i) => ({ x: bx, y: floorTop(i) + 4 * ts, w: 5 * ts, h: 7 * ts }),
   };
@@ -635,6 +635,15 @@ function hitTower(mx, my) {
   return 'tower';
 }
 
+/** Where a buddy at home is in its room right now: it strolls to a new spot every few seconds. */
+function roomSpot(id, now) {
+  const seed = [...String(id)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
+  const lo = TW.WIN_X + 5, hi = TW.WIN_X + TW.WIN_W - 6, t = now + (seed % 9000), seg = Math.floor(t / 7000);
+  const at = (n) => lo + hash(seed % 997 + n * 13.7) * (hi - lo);
+  const k = Math.min(1, (t % 7000) / (Math.abs(at(seg) - at(seg - 1)) * 90 + 1)); // walks at about 11 art px a second
+  return { x: Math.round(at(seg - 1) + (at(seg) - at(seg - 1)) * k), walking: k < 1 };
+}
+
 const roomSprite = (room, lit, ts) => memo(`room|${JSON.stringify(room || {})}|${lit ? 1 : 0}|${ts}`, () => raster(Clawd.roomPixels(room, lit), ts));
 const miniSprite = (f, body, ts) => memo(`mini|${f}|${body}|${ts}`, () => raster(Clawd.mini(f, body).pixels, ts));
 
@@ -642,14 +651,18 @@ function drawTower(T) {
   const g = towerGeo(T);
   if (!g) return;
   const { ts, bx, by, n } = g, now = performance.now();
+  // Everything is drawn on whole device pixels, k per art pixel, the same grid the room and
+  // figure sprites are rasterised on (otherwise at 125% the rooms drift into the elevator shaft).
+  const k = Math.max(1, Math.round(ts * dpr));
+  const BX = Math.round(bx * dpr), BY = Math.round(by * dpr);
+  const P = (x) => (BX + x * k) / dpr, Q = (y) => (BY + y * k) / dpr; // art pixel -> DIP, for blit()
+  const R = (x, y, w, h, c, a = 1) => { ctx.globalAlpha = a; ctx.fillStyle = c; ctx.fillRect(BX + Math.round(x * k), BY + Math.round(y * k), Math.round(w * k), Math.round(h * k)); };
+  const B = (sp, x, y) => blit(sp, P(x) - sp.ox, Q(y) - sp.oy, 1); // sprite whose own origin goes at art (x, y)
+  const lobbyTop = -TW.LOBBY, top = -(TW.LOBBY + n * TW.FLOOR), roofTop = top - TW.ROOF;
   // Everything below the ground line is underground (sunk), so clip it away.
   ctx.save();
   dev();
   ctx.beginPath(); ctx.rect(0, 0, canvas.width, Math.round(g.ground * dpr)); ctx.clip();
-  dip();
-  const R = (x, y, w, h, c, a = 1) => { ctx.globalAlpha = a; ctx.fillStyle = c; ctx.fillRect(Math.round(bx + x * ts), Math.round(by + y * ts), w * ts, h * ts); };
-  const B = (sp, x, y) => { dev(); blit(sp, x, y, 1); dip(); }; // blit works in device pixels
-  const lobbyTop = -TW.LOBBY, top = -(TW.LOBBY + n * TW.FLOOR), roofTop = top - TW.ROOF;
 
   // The glass elevator shaft, ground to roof.
   R(TW.SHAFT_X, roofTop + 3, TW.SHAFT_W, -roofTop - 3, TC.glass, 0.16);
@@ -668,21 +681,22 @@ function drawTower(T) {
     const f = T.floors[i], y0 = -(TW.LOBBY + (i + 1) * TW.FLOOR);
     R(0, y0 + TW.FLOOR - 2, TW.BODY, 2, TC.slab);
     R(TW.WIN_X - 1, y0 + TW.WIN_Y - 1, TW.WIN_W + 2, TW.WIN_H + 2, TC.frame);
-    B(roomSprite(f.room, f.lit, ts), bx + TW.WIN_X * ts, by + (y0 + TW.WIN_Y) * ts);
-    // Its figure: resting in the room, or walking between the room and the elevator.
+    const room = roomSprite(f.room, f.lit, ts);
+    blit(room, P(TW.WIN_X), Q(y0 + TW.WIN_Y), 1);
+    // Its figure: strolling around its room, or walking between the room and the elevator.
     if (f.mini !== null && f.mini !== undefined) {
-      const k = f.mini, x = TW.WIN_X + 9 + k * (TW.SHAFT_X + 4 - TW.WIN_X - 9), feet = y0 + TW.WIN_Y + TW.WIN_H - 2;
-      const walking = k > 0 && k < 1, fr = walking ? Math.floor(now / 140) % 2 : Math.floor(now / 900) % 2;
+      const spot = roomSpot(f.id, now), m = f.mini, x = Math.round(spot.x + m * (TW.SHAFT_X + 4 - spot.x)), feet = y0 + TW.WIN_Y + TW.WIN_H - 2;
+      const walking = (m > 0 && m < 1) || (m === 0 && spot.walking), fr = walking ? Math.floor(now / 140) % 2 : Math.floor(now / 900) % 2;
       const inRoom = x < TW.WIN_X + TW.WIN_W - 2;
       if (inRoom || x > TW.SHAFT_X + 1) {
         ctx.save(); ctx.beginPath();
         const clipX = inRoom ? TW.WIN_X : TW.SHAFT_X, clipW = inRoom ? TW.WIN_W : TW.SHAFT_W;
-        ctx.rect(bx + clipX * ts, by + (y0 + TW.WIN_Y) * ts, clipW * ts, TW.WIN_H * ts); ctx.clip();
-        B(miniSprite(fr, f.body, ts), bx + x * ts, by + feet * ts);
-        ctx.restore(); dip();
+        ctx.rect(BX + clipX * k, BY + (y0 + TW.WIN_Y) * k, clipW * k, TW.WIN_H * k); ctx.clip();
+        blit(miniSprite(fr, f.body, ts), P(x), Q(feet), 1);
+        ctx.restore();
       }
     }
-    // A warm glow spills out of lit windows; dark ones get a faint reflection.
+    // A warm glow spills out of lit windows.
     if (f.lit) R(TW.WIN_X, y0 + TW.WIN_Y + TW.WIN_H + 1, TW.WIN_W, 1, '#ffe7a0', 0.35);
     // The light switch: up (green) while the buddy is on, down while it's home.
     R(TW.SWITCH_X, y0 + 5, 3, 5, TC.plate);
@@ -690,8 +704,7 @@ function drawTower(T) {
     R(TW.SWITCH_X + 1, y0 + 4, 1, 1, f.on ? TC.ledOn : TC.ledOff, f.busy && Math.floor(now / 250) % 2 ? 0.3 : 1);
     if (hoverId === 'tower:switch:' + f.id || hoverId === 'tower:room:' + f.id) {
       const r = hoverId.startsWith('tower:switch') ? g.sw(i) : g.win(i);
-      brackets(r.x - 2, r.y - 2, r.w + 4, r.h + 4, 4 + ts, 2, '#ffc431', 0.95);
-      dip();
+      dip(); brackets(r.x - 2, r.y - 2, r.w + 4, r.h + 4, 4 + ts, 2, '#ffc431', 0.95); dev();
     }
   }
 
@@ -703,49 +716,52 @@ function drawTower(T) {
   else {
     R(TW.DOOR_X, -TW.DOOR_H, TW.DOOR_W, TW.DOOR_H, TC.door);
     R(TW.DOOR_X + TW.DOOR_W / 2 - 1, -TW.DOOR_H, 1, TW.DOOR_H, TC.frame);
-    R(TW.DOOR_X + 2, -TW.DOOR_H / 2, 1, 1, TC.sign); R(TW.DOOR_X + TW.DOOR_W - 3, -TW.DOOR_H / 2, 1, 1, TC.sign);
+    R(TW.DOOR_X + 2, -Math.round(TW.DOOR_H / 2), 1, 1, TC.sign); R(TW.DOOR_X + TW.DOOR_W - 3, -Math.round(TW.DOOR_H / 2), 1, 1, TC.sign);
   }
-  R(15, -9, 13, 8, TC.frame);
-  R(16, -8, 11, 6, TC.glass, 0.55);
-  R(17, -7, 3, 1, '#ffffff', 0.6);
-  // "HQ" over the lobby window.
-  const sign = textSprite('HQ', ts, TC.sign);
-  B(sign, bx + 21.5 * ts - sign.w / 2 - sign.ox, by + (lobbyTop + 1) * ts - sign.oy);
-  if (T.hidden > 0) { const more = textSprite(`+${T.hidden}`, ts, '#f6e9df'); B(more, bx + 11 * ts - more.ox, by + (roofTop + 3) * ts - more.oy); }
+  // A glass front for the lobby, in panes, with the sign above it.
+  const glassL = TW.DOOR_X + TW.DOOR_W + 3, glassR = TW.BODY - 4;
+  R(glassL, -9, glassR - glassL, 8, TC.frame);
+  for (let x = glassL + 1; x < glassR - 1; x += 12) {
+    const w = Math.min(11, glassR - 1 - x);
+    R(x, -8, w, 6, TC.glass, 0.55);
+    R(x + 1, -7, 3, 1, '#ffffff', 0.6);
+  }
+  const sign = textSprite('BUDDY HQ', ts, TC.sign), signW = Math.round(sign.w * dpr / k);
+  B(sign, Math.round((glassL + glassR - signW) / 2), lobbyTop + 1);
+  if (T.hidden > 0) B(textSprite(`+${T.hidden}`, ts, '#f6e9df'), 12, roofTop + 3);
 
   // Walking between the lobby door and the elevator.
   if (T.lobby) {
-    const k = T.lobby.dir === 'in' ? T.lobby.k : 1 - T.lobby.k;
-    const x = TW.DOOR_X + TW.DOOR_W / 2 + k * (TW.SHAFT_X + 4 - TW.DOOR_X - TW.DOOR_W / 2);
-    B(miniSprite(Math.floor(now / 140) % 2, T.lobby.body, ts), bx + x * ts, by - 1 * ts);
+    const m = T.lobby.dir === 'in' ? T.lobby.k : 1 - T.lobby.k;
+    const x = Math.round(TW.DOOR_X + TW.DOOR_W / 2 + m * (TW.SHAFT_X + 4 - TW.DOOR_X - TW.DOOR_W / 2));
+    blit(miniSprite(Math.floor(now / 140) % 2, T.lobby.body, ts), P(x), Q(-1), 1);
   }
 
-  // The elevator car.
-  // Its floor lines up with the rooms' floors (and with the lobby's at the bottom).
-  const f = T.car.f, carBottom = f >= 0 ? -(TW.LOBBY + f * TW.FLOOR) - 5 : -1 + (f + 1) * (-TW.LOBBY - 4), carTop = carBottom - 11;
+  // The elevator car. Its floor lines up with the rooms' floors (and the lobby's at the bottom).
+  const f = T.car.f, carBottom = Math.round(f >= 0 ? -(TW.LOBBY + f * TW.FLOOR) - 5 : -1 + (f + 1) * (-TW.LOBBY - 4)), carTop = carBottom - 11;
   R(TW.SHAFT_X + TW.SHAFT_W / 2, roofTop + 4, 1, carTop - roofTop - 4, '#2f2f38', 0.8); // cable
   R(TW.SHAFT_X, carTop, TW.SHAFT_W, 11, TC.carDark);
   R(TW.SHAFT_X + 1, carTop + 1, TW.SHAFT_W - 2, 9, T.car.door ? '#3b3546' : TC.car);
   R(TW.SHAFT_X, carTop, TW.SHAFT_W, 1, '#ffffff', 0.5);
-  if (T.car.rider) B(miniSprite(Math.floor(now / 500) % 2, T.car.rider, ts), bx + (TW.SHAFT_X + 4) * ts, by + (carBottom - 1) * ts);
+  if (T.car.rider) blit(miniSprite(Math.floor(now / 500) % 2, T.car.rider, ts), P(TW.SHAFT_X + 4), Q(carBottom - 1), 1);
   else if (!T.car.door) R(TW.SHAFT_X + 2, carTop + 2, TW.SHAFT_W - 4, 3, TC.glass, 0.6);
 
-  // Roof: parapet, antenna with a blinking light, and the collapse button.
+  // Roof: parapet, antenna with a blinking light, a water tank, a little garden, and the collapse button.
   R(-1, roofTop + 8, TW.BODY + 2, 2, TC.slab);
-  R(8, roofTop + 1, 1, 7, '#8d857e');
-  R(6, roofTop + 7, 5, 1, '#8d857e');
-  R(7, roofTop, 3, 1, Math.floor(now / 700) % 2 ? '#ff5a4e' : '#7a2a24');
-  const b = g.button, hot = hoverId === 'tower:toggle';
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = '#000'; ctx.fillRect(Math.round(b.x - ts), Math.round(b.y - ts), b.w + 2 * ts, b.h + 2 * ts);
-  ctx.fillStyle = hot ? '#3fd0ff' : '#ffc431'; ctx.fillRect(Math.round(b.x), Math.round(b.y), b.w, b.h);
-  ctx.fillStyle = hot ? '#9eeaff' : '#ffe7a0'; ctx.fillRect(Math.round(b.x), Math.round(b.y), b.w, ts);
+  R(TW.ANT_X, roofTop + 1, 1, 7, '#8d857e');
+  R(TW.ANT_X - 2, roofTop + 7, 5, 1, '#8d857e');
+  R(TW.ANT_X - 1, roofTop, 3, 1, Math.floor(now / 700) % 2 ? '#ff5a4e' : '#7a2a24');
+  R(38, roofTop + 3, 9, 4, '#8b5a3c'); R(38, roofTop + 3, 9, 1, '#a8794f'); R(39, roofTop + 7, 1, 1, '#5a3a22'); R(45, roofTop + 7, 1, 1, '#5a3a22');
+  for (let i = 0; i < 4; i++) { R(54 + i * 3, roofTop + 6, 2, 2, i % 2 ? '#3aa76d' : '#4fbf6a'); R(54 + i * 3, roofTop + 7, 2, 1, '#8b5a3c'); }
+  const hot = hoverId === 'tower:toggle', btnY = roofTop + 2;
+  R(TW.BTN_X - 1, btnY - 1, 10, 9, '#000000');
+  R(TW.BTN_X, btnY, 8, 7, hot ? '#3fd0ff' : '#ffc431');
+  R(TW.BTN_X, btnY, 8, 1, hot ? '#9eeaff' : '#ffe7a0');
   // ▼ collapses it, ▲ brings it up.
   const up = T.h < 0.5;
-  ctx.fillStyle = '#1a1408';
   for (let r = 0; r < 3; r++) {
-    const w = (up ? 1 + r * 2 : 5 - r * 2) * ts, y = b.y + (2 + r) * ts;
-    ctx.fillRect(Math.round(b.x + b.w / 2 - w / 2), Math.round(y), w, ts);
+    const w = up ? 1 + r * 2 : 5 - r * 2;
+    R(TW.BTN_X + 4 - Math.ceil(w / 2), btnY + 2 + r, w, 1, '#1a1408');
   }
   ctx.restore();
   dev();
