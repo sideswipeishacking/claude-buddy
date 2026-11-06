@@ -940,8 +940,11 @@ function draw() {
     const sp = sprite(b.anim, frameOf(b, elapsed), b.look, b.flip, b.o, b.s);
     b._sp = sp;
     if (b.birth && b.birth.t + elapsed < BUILD.print) { drawBuildBody(b, sp, x, y, elapsed); continue; }
+    if (b.clipY !== undefined) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, canvas.width, Math.round((b.clipY - origin.y) * dpr)); ctx.clip(); }
     if (b.stretch) blitTall(sp, x, y, b.stretch, b.alpha);
     else blit(sp, x, y, b.alpha);
+    if (b.clipY !== undefined) ctx.restore();
+    if (b.reach) fxSafe(() => drawReach(b));
     if (b.soot > 0) {
       // Back from hell: sooty, smoking a little.
       const ss = memo(`soot|${b.anim}|${frameOf(b, elapsed)}|${lookKey(b.look)}|${b.flip ? 1 : 0}|${b.o}|${b.s}`, () => raster(orient(Clawd.frame(b.anim, frameOf(b, elapsed), b.look, b.flip).pixels, b.o), b.s, '#1a0f0c'));
@@ -990,7 +993,7 @@ function draw() {
 
   if (doom) { drawPit(doom, performance.now(), true); drawBeams(doom, dt); }
   if (overlord) drawOverlord(overlord, elapsed);
-  fxSafe(() => { if (fx) { drawWeatherFront(fx.weather); drawReport(fx.report); drawOvSay(fx.say, overlord); } });
+  fxSafe(() => { if (fx) { drawWeatherFront(fx.weather); drawReport(fx.report); drawOvSay(fx.say, overlord); drawNotes(fx.notes); drawFakeError(fx.fakeError); } });
   if (doom) { drawVerdicts(doom, elapsed); drawBanner(doom, dt); }
 
   // The Open button of a watched file dialog: the buddy will eat what you picked.
@@ -1301,9 +1304,13 @@ const inside = (el, x, y) => { if (!el || el.classList.contains('hidden')) retur
 
 /** What's under the pointer: a buddy id, 'overlord', 'dialog', or nothing. */
 function whatsAt(mx, my) {
+  if (fakeErrorOkAt(mx, my)) return 'fakeerr';
+  if (inFakeError(mx, my)) return 'fakeerr-box';
+  const note = noteAt(mx, my);
+  if (note) return 'note:' + note.id;
   return hitTest(mx, my) || (inDialogHot(mx, my) ? 'dialog' : null) || (hitReport(mx, my) ? 'report' : null) || (hitOverlord(mx, my) ? 'overlord' : null) || hitTower(mx, my);
 }
-const isBuddyId = (id) => !!id && id !== 'overlord' && id !== 'dialog' && id !== 'report' && !id.startsWith('tower');
+const isBuddyId = (id) => !!id && id !== 'overlord' && id !== 'dialog' && id !== 'report' && !id.startsWith('tower') && !id.startsWith('note:') && !id.startsWith('fakeerr');
 
 // The cards and permission buttons count as part of what they belong to, with
 // a short grace period so you can move the mouse onto them.
@@ -1321,7 +1328,7 @@ function setHover(id) {
   if (id === hoverId) return;
   hoverId = id;
   document.body.classList.toggle('grab', isBuddyId(id));
-  document.body.classList.toggle('point', id === 'dialog' || id === 'overlord' || id === 'report' || (!!id && id.startsWith('tower:')));
+  document.body.classList.toggle('point', id === 'dialog' || id === 'overlord' || id === 'report' || id === 'fakeerr' || (!!id && (id.startsWith('tower:') || id.startsWith('note:'))));
   buddy.send('hover', id);
 }
 
@@ -1396,6 +1403,9 @@ window.addEventListener('pointerdown', (e) => {
   if (!id) return;
   if (id === 'overlord') { buddy.send('overlord-click', { x: e.clientX + origin.x, y: e.clientY + origin.y }); return; } // its options (or, mid-fight, a hit)
   if (id === 'report') { buddy.send('ov-action', { act: 'report-close' }); return; }
+  if (id.startsWith('note:')) { buddy.send('mischief', { act: 'note-off', id: Number(id.slice(5)) }); return; }
+  if (id === 'fakeerr') { buddy.send('mischief', { act: 'error-ok' }); return; }
+  if (id === 'fakeerr-box') return;
   if (id === 'dialog' || id.startsWith('tower')) { pressedOn = id; return; } // acted on in 'click'
   grabbing = true;
   grabAt = performance.now();

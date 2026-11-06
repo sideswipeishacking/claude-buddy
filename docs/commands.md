@@ -20,6 +20,9 @@ All `/buddy` commands are handled by the plugin's hook. They never reach the mod
 | `/buddy hat <hat>` | Change its hat, e.g. `/buddy hat wizard` |
 | `/buddy custom` | Open the Buddy Workshop (also: `customize`, `look`, `wardrobe`, `style`) |
 | `/buddy helpers on` · `/buddy helpers off` | Show or hide helper buddies for this session's sub-agents |
+| `/buddy annoy on` · `/buddy annoy off` | Annoy mode: when it's been out with nothing to do for a while, it gets up to mischief now and then (see [tips](tips.md#keeping-the-peace)) |
+| `/buddy take <name>` | Move one of your buddies to this session: it keeps its look, name and room. If this session had a buddy, the two swap (also: `adopt`, `claim`) |
+| `/buddy take` | Take the buddy of the chat this one continues (a chat you forked or continued in the Claude app) |
 | `/buddy size <1-12>` | Pixel size on the kind of screen the buddy is on |
 | `/buddy size laptop <1-12>` | Pixel size on a laptop's built-in screen |
 | `/buddy size external <1-12>` | Pixel size on other monitors |
@@ -41,7 +44,9 @@ The default sizes are **2** on a laptop's own screen and **4** on other monitors
 | **Give a snack** | A treat for your hard-working buddy |
 | **Play fetch** | Throw a ball for it |
 | **Open project folder** | Open the session's working folder |
+| **Move to session** | Hand it to another session you've used lately (one that continues its chat is listed first). A buddy already there swaps with it |
 | **Mute this buddy** | Silence its sounds |
+| **Annoy mode** | Same as `/buddy annoy on` / `off` |
 | **Hide for…** | 5, 10, 30 or 60 minutes (it comes back early if Claude needs you) |
 | **Send home** | Same as `/buddy off` |
 

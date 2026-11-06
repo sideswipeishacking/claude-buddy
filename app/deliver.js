@@ -75,12 +75,15 @@ function resolveApp(s, { fresh = false } = {}) {
   if (!own.window && s.app && s.app.pid && same(s.app.pid, s.app.exe)) own = P.windowOwner(s.app.pid, wins, tree);
   const w = own.window;
   const kind = s.where || 'terminal';
-  const app = { at: Date.now(), kind, pid: own.pid, exe: w ? w.exe : '', path: w ? w.path || P.exePath(own.pid) : '', name: '', scheme: null, tmux: !!c.tmux };
-  if (w && (kind === 'ide' || kind === 'ide-terminal')) {
+  // Nothing running under the old process ids (the app restarted since): remember which program it
+  // was anyway, so typing along can match the session's window by program until the next hook event.
+  const prev = !w && s.app && s.app.exe ? s.app : null;
+  const app = { at: Date.now(), kind, pid: w ? own.pid : 0, exe: w ? w.exe : prev ? prev.exe : '', path: w ? w.path || P.exePath(own.pid) : prev ? prev.path || '' : '', name: '', scheme: null, tmux: !!c.tmux };
+  if ((w || prev) && (kind === 'ide' || kind === 'ide-terminal')) {
     const prod = editorProduct(app.path);
     if (prod) { app.name = prod.name; app.scheme = prod.scheme; }
     else { const jb = Object.keys(JETBRAINS).find((k) => baseName(app.exe).startsWith(k)); if (jb) app.name = JETBRAINS[jb]; }
-  } else if (w && kind === 'terminal') {
+  } else if ((w || prev) && kind === 'terminal') {
     app.name = TERMINAL_NAMES[baseName(app.exe)] || '';
   }
   // Name the source after the real app ("Cursor", "WezTerm", "PyCharm terminal").

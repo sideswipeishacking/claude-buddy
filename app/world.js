@@ -32,7 +32,7 @@ const LONG_WAIT_KINDS = new Set(['terminal', 'lifting', 'testing', 'servers']);
 const SHAKE = { wake: 2, dizzy: 7, sick: 20, decay: 1.6 };
 const PUKE = ['#a4c639', '#8db22c', '#c8d96f', '#6f8f1f'];
 const TW = Clawd.TOWER; // the skyscraper's layout, in art pixels
-const OFFSTAGE = new Set(['birth', 'script', 'hell', 'doom', 'ride', 'enter', 'carried']); // not for grabbing, feeding or errands
+const OFFSTAGE = new Set(['birth', 'script', 'hell', 'doom', 'ride', 'enter', 'carried', 'prank']); // not for grabbing, feeding or errands
 
 const LOOK_DEFAULTS = {
   hat: null, hand: null, face: null, neck: null, back: null, body: Clawd.COL.body, eye: Clawd.COL.eye, size: 1,
@@ -151,6 +151,9 @@ class Buddy {
     this.script = null; // scripted moves (eating files in a file dialog)
     this.stretch = 1; // vertical stretch while gulping several rows at once
     this.history = [];
+    this.lastWorkAt = Date.now(); // when its session last worked (annoy mode waits a while after that)
+    this.annoy = false; // annoy mode: mischief now and then (mischief.js)
+    this.mischief = null; this.reach = null; this.hop = null;
   }
 
   setAnim(name) {
@@ -302,6 +305,29 @@ class World {
   get(id) { return this.buddies.get(id); }
   usedHats() { return new Set([...this.buddies.values()].map((b) => b.look.hat)); }
 
+  /**
+   * Hand buddies over to other sessions (a buddy's id is its session's). `map`: old id -> new Session.
+   * Swaps work too: every buddy is taken out before any is put back. Buddies at home (riding the
+   * elevator) keep their rides. Returns the buddies that moved.
+   */
+  rekey(map) {
+    const moved = [];
+    for (const [old, s] of map) { const b = this.buddies.get(old); if (b && s && old !== s.id) { this.buddies.delete(old); moved.push([b, s]); } }
+    for (const [b, s] of moved) {
+      b.id = s.id; b.session = s;
+      b.hop = null; b.ackDone = true; b.lastWorkAt = Date.now();
+      if (b.mischief) this.mischiefEnd(b);
+      this.buddies.set(s.id, b);
+      for (const m of this.minis) if (m.parent === b) m.session = s;
+    }
+    const to = (id) => (map.has(id) && map.get(id) ? map.get(id).id : id);
+    for (const r of this.tower.rides) r.id = to(r.id);
+    for (const t of this.fx.tags || []) t.id = to(t.id);
+    if (this.fx.boss) this.fx.boss.team = this.fx.boss.team.map(to);
+    if (this.ov.patrol) this.ov.patrol.list = this.ov.patrol.list.map(to);
+    return moved.map(([b]) => b);
+  }
+
   /** Summon a buddy. With birth (the default) it hatches big in the middle of the screen first. */
   add(session, { look, x, birth = true } = {}) {
     if (this.buddies.has(session.id)) return this.buddies.get(session.id);
@@ -351,7 +377,8 @@ class World {
       this.tower.rides = this.tower.rides.filter((r) => r.id !== id || r.dir === 'up');
       this.buddies.delete(id); this.hooks.removed?.(id); return;
     }
-    if (b.mode === 'held' || b.mode === 'carried') { b.mode = 'air'; b.fallKind = 'drop'; }
+    if (b.mischief) this.mischiefEnd(b);
+    if (b.mode === 'held' || b.mode === 'carried' || b.mode === 'prank') { b.mode = 'air'; b.fallKind = 'drop'; }
     if (b.mode === 'birth') { b.mode = 'air'; b.fallKind = 'drop'; b.birth = null; if (this.ov.build === b.id) this.ovReturn(); }
     if (b.mode === 'script') { const S = b.script; b.script = null; b.stretch = 1; this.drop(b, 'drop'); S.onDone?.(); }
     b.queue = [];
@@ -571,6 +598,7 @@ class World {
   grab(id) {
     const b = this.buddies.get(id);
     if (!b || b.leaving || OFFSTAGE.has(b.mode)) return;
+    if (b.mischief) this.mischiefEnd(b); // caught in the act
     if (b.mode === 'wall' || b.mode === 'ceil') this.uprightFrom(b);
     b.mode = 'held';
     b.grab = { dx: this.cursor.x - b.x, dy: this.cursor.y - b.y, x: this.cursor.x, y: this.cursor.y, at: Date.now(), moved: false, from: b.ground };
@@ -654,6 +682,7 @@ class World {
     const keep = !again && b.task && (b.task.type === 'fetch' || b.task.type === 'home') ? b.task : null;
     if (again && b.task && b.task.type === 'home') { this.buddies.delete(b.id); this.hooks.removed?.(b.id); return; }
     b.queue = []; b.react = null; b.task = keep; b.action = null; b.walkTarget = null; b.exit = null; b.hide = null;
+    b.mischief = null; b.reach = null; b.clipY = undefined; b.hop = null; b.hopKeep = false;
     if (!Number.isFinite(b.x) || !Number.isFinite(b.y)) {
       const d = this.displays[0];
       b.x = d ? d.workArea.x + d.workArea.width / 2 : 400; b.y = d ? d.bounds.y + 20 : 20;
@@ -670,6 +699,7 @@ class World {
       if (b.mode === 'birth') { this.birthTick(b, now); return; }
       if (b.script) { this.scriptTick(b, now); return; }
       b.scale = this.scaleAt(b);
+      if (b.mode === 'prank') { this.mischiefTick(b, now); return; } // peeking from behind a window, or shadowing the cursor
       if (b.shrink) {
         // Shrinking back to normal size while falling after the build.
         const k = (now - b.shrink.at) / 450;
@@ -917,7 +947,7 @@ class World {
     if (b.y - h < y0 && b.vy < 0) { b.y = y0 + h; b.vy = 0; }
     b.flip = b.vx < -20 ? true : b.vx > 20 ? false : b.flip;
     b.setAnim(b.fallKind === 'throw' ? 'held' : b.vy < 0 ? 'jump' : b.fallKind === 'nap' ? 'nap' : 'fall');
-    b.bubble = null;
+    b.bubble = b.hopKeep ? this.doneBubble(b.session, b) : null; // a done hop keeps its ✓ up
     if (b.vy >= 0) {
       let best = null;
       for (const p of this.platforms) {
@@ -937,6 +967,7 @@ class World {
 
   land(b, p) {
     const impact = b.vy, kind = b.fallKind;
+    b.hopKeep = false;
     this.standOn(b, p, b.x);
     if (b.isMini) { b.queue.unshift({ anim: 'land', dur: 120 }); return; }
     if (b.spawned === 'birth') {
@@ -1006,8 +1037,16 @@ class World {
     const T = clamp(0.55 + Math.abs(dx) / 1600 + (dy < 0 ? 0.2 : 0), 0.55, 1.5);
     const from = b.plat;
     this.drop(b, 'jump');
-    b.vx = dx / T;
-    b.vy = clamp((dy - 0.5 * G * T * T) / T, -2800, 1500);
+    // Going up, the top of the arc clears the edge with room to spare: the 16 ms steps lose a
+    // dozen pixels of height, and a leap that peaks just short of a ledge falls back forever.
+    let vy = (dy - 0.5 * G * T * T) / T;
+    if (dy < 0) vy = Math.min(vy, -Math.sqrt(2 * G * (-dy + 40)));
+    vy = clamp(vy, -2800, 1500);
+    // It lands on the way down (platforms only catch a falling buddy): time the sideways part to that.
+    const disc = vy * vy + 2 * G * dy;
+    const land = disc > 0 ? (-vy + Math.sqrt(disc)) / G : T;
+    b.vx = dx / Math.max(0.2, land);
+    b.vy = vy;
     b.flip = dx < 0;
     b.ignorePlat = from?.key;
     b.ignoreUntil = Date.now() + 150;
@@ -1276,6 +1315,8 @@ class World {
 
     // 3. Something you asked for: come here, fetch, snack.
     if (b.task && this.doTask(b, now)) return;
+    // 3b. Up to mischief (annoy mode).
+    if (b.mischief && this.mischiefTick(b, now)) return;
 
     // 4. Being looked at: stop and face the user.
     const alert = this.alertBubble(s);
@@ -1289,6 +1330,7 @@ class World {
     // Work, alerts and naps happen on the ground; sleepy buddies drop gently.
     if (!grounded) {
       if (s.state === 'working' || alert) return this.letGo(b, 'drop');
+      if (this.doneBubble(s, b) && !b.pinned) return this.letGo(b, 'jump'); // down it comes, to jump up at you
       if (now - b.idleSince > SLEEP_AFTER) return this.letGo(b, 'nap');
       return this.idleUp(b, now);
     }
@@ -1670,6 +1712,8 @@ class World {
     const s = b.session;
     b.action = null;
     b.meet = null;
+    b.lastWorkAt = now; b.hop = null;
+    if (b.mischief) this.mischiefEnd(b);
     b.exit = null;
     b.idleSince = now;
     if (b.sleeping) this.wake(b);
@@ -1708,6 +1752,10 @@ class World {
     b.workKind = null;
     if (now - s.lastEventAt > STALE_AFTER && !b.leaving) { if (this.hooks.stale) this.hooks.stale(b.id); else this.remove(b.id); return; }
 
+    // Its turn is done (✓): it jumps up at you, trying to reach your cursor.
+    if (this.doneHopTick(b, now)) return;
+    if (this.mischiefCheck(b, now)) return;
+
     // On the way to meet a friend (this survives leaps and landings, unlike b.action).
     if (b.meet) {
       if (this.meetTick(b, b.meet, now)) return;
@@ -1740,8 +1788,8 @@ class World {
       }
     }
 
-    // Nap time: always on the bottom floor, next to a sleeping friend if one is close.
-    if (now - b.idleSince > SLEEP_AFTER) {
+    // Nap time: always on the bottom floor, next to a sleeping friend if one is close. (Troublemakers don't nap.)
+    if (now - b.idleSince > SLEEP_AFTER && !b.annoy) {
       if (b.plat && b.plat.win && !b.pinned) {
         const end = b.x - b.plat.x1 < b.plat.x2 - b.x ? 'L' : 'R';
         this.walkTo(b, end === 'R' ? b.plat.x2 + 40 : b.plat.x1 - 40, spd(b, 'walk'));
@@ -1805,6 +1853,8 @@ class World {
   sociable(o, now, lenient = false) {
     if (!o || this.buddies.get(o.id) !== o || o.leaving || o.hide || o.sleeping || o.pinned || o.isMini || o.task || this.panicking()) return false;
     if (o.session.state === 'working' || o.session.attention === 'permission' || o.session.attention === 'question') return false;
+    // Busy: up to mischief, hopping at you with its ✓, or walking out of the way of the lobby door.
+    if (o.mischief || (o.hop && this.doneBubble(o.session, o)) || (o.separating && o.walkTarget !== null)) return false;
     if (lenient) return ['auto', 'wall', 'ceil', 'air'].includes(o.mode);
     return o.mode === 'auto' && !!o.plat && !o.react && !o.queue.length;
   }
@@ -2142,14 +2192,19 @@ class World {
         it.x += (o.x - it.x) * Math.min(1, dt * 6);
         it.vy += G * 0.5 * dt;
         it.y += it.vy * dt;
-        if ((o.mode === 'auto' || o.mode === 'float') && it.y >= o.y - tall(o) * 0.85) {
+        // Caught standing or mid-jump (it's munched after landing).
+        if ((o.mode === 'auto' || o.mode === 'float' || o.mode === 'air') && it.y >= o.y - tall(o) * 0.85 && it.y <= o.y + 12) {
           this.items.splice(this.items.indexOf(it), 1);
           if (o.task && o.task.type === 'snack') o.task = null;
           o.push('snack', 2600, { sound: 'munch' });
           o.push('cheer', 600);
           continue;
         }
-        if (it.y > o.y + 40) this.items.splice(this.items.indexOf(it), 1);
+        if (it.y > o.y + 40) {
+          // Missed it (it jumped over the cookie, say): it drops in again from above for a while.
+          if (now - it.born < 8000 && !OFFSTAGE.has(o.mode) && o.mode !== 'held') { it.y = o.y - tall(o) - 60; it.vy = 0; }
+          else this.items.splice(this.items.indexOf(it), 1);
+        }
         continue;
       }
       if (it.rest) {
@@ -2464,7 +2519,9 @@ class World {
         sleeping: b.sleeping || undefined,
         hovered: b.hovered,
         birth: b.birth ? { t: now - b.birth.at, x: Math.round(b.birth.cx), y: Math.round(b.birth.cy), big: b.birth.big } : null,
-        interactive: !['birth', 'script', 'doom', 'enter', 'carried'].includes(b.mode) && !b.hide && alpha > 0,
+        interactive: !['birth', 'script', 'doom', 'enter', 'carried', 'prank'].includes(b.mode) && !b.hide && alpha > 0,
+        reach: b.reach ? { x: Math.round(b.reach.x), y: Math.round(b.reach.y), k: b.reach.k } : undefined,
+        clipY: b.clipY !== undefined ? Math.round(b.clipY) : undefined,
         soot: b.soot ? Math.max(0, Math.min(1, (b.soot.until - now) / 9000)) : 0,
         perm: s.attention === 'permission' && s.pendingPermission ? { ...s.pendingPermission, held: !!s.permHeld } : null,
         minis: this.minis.filter((m) => m.parent === b).map((m) => ({
@@ -2485,11 +2542,12 @@ class World {
     let tower = null;
     try { tower = this.towerSnapshot(now); } catch (err) { this.hooks.error?.(err, 'tower snapshot'); }
     let fx = null;
-    try { fx = this.fxSnapshot(now); } catch (err) { this.hooks.error?.(err, 'fx snapshot'); }
+    try { fx = { ...this.fxSnapshot(now), ...this.mischiefFx(now) }; } catch (err) { this.hooks.error?.(err, 'fx snapshot'); }
     return { buddies: out, items, overlord: this.ovSnapshot(now), covers: this.covers.filter((c) => c.p > 0), doom: this.doomSnapshot(now), tower, puke, fx };
   }
 }
 
 Object.assign(World.prototype, require('./spectacle')({ G, clamp, rand, pick, halfW, tall, spd }));
+Object.assign(World.prototype, require('./mischief')({ G, clamp, rand, pick, halfW, tall, spd }));
 
 module.exports = { World, fullLook, LOOK_DEFAULTS };

@@ -22,7 +22,8 @@ const impl = OS === 'win32' ? require('./win32') : OS === 'darwin' ? require('./
 const none = () => [];
 const base = {
   available: false, coords: 'physical',
-  listWindows: none, listAllAppWindows: none, topWindowAt: () => null, foregroundInfo: () => null, foregroundId: () => null, focus: () => false,
+  listWindows: none, listAllAppWindows: none, topWindowAt: () => null, cursorShowing: () => true, minimize: () => false,
+  cursorPos: () => null, slowDrag: async () => ({ ok: false }), captureId: () => null, releaseCapture: () => false, windowInfoAt: () => null, foregroundInfo: () => null, foregroundId: () => null, focus: () => false,
   processTree: () => new Map(), exePath: () => '', mouseDown: () => null, modifiersDown: () => false,
   fileDialogs: none, pressOpen: () => false, pixel: () => null, windowPixels: none, setClipboardOwner: () => {}, postQuit: () => {},
 };

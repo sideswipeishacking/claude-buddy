@@ -1,13 +1,13 @@
 {
   "name": "claude-buddy",
   "productName": "Claude Buddy",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Pixel desktop companions for your Claude Code sessions: one buddy per session, acting out what Claude is doing",
   "main": "app/main.js",
   "bin": { "claude-buddy": "bin/claude-buddy.js" },
   "scripts": {
     "start": "electron .",
-    "test": "node tools/features-test.js && node tools/climb-test.js && node tools/life-test.js && node tools/fx-smoke-test.js",
+    "test": "node tools/features-test.js && node tools/climb-test.js && node tools/life-test.js && node tools/fx-smoke-test.js && node tools/handover-test.js",
     "privacy-check": "node tools/privacy-check.js",
     "setup": "node bin/claude-buddy.js install"
   },

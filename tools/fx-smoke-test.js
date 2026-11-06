@@ -54,7 +54,7 @@ const sandbox = {
   tagScale: (s) => Math.max(2, Math.round(s / 2)),
 };
 vm.createContext(sandbox);
-vm.runInContext(fs.readFileSync(path.join(__dirname, '../app/overlay-fx.js'), 'utf8') + '\n;this.api = { drawStreams, drawUsageRing, drawOvSay, drawScan, drawTag, drawDrones, drawWeatherBack, drawWeatherFront, drawReport, hitReport, drawBossBack, drawBossFront };', sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '../app/overlay-fx.js'), 'utf8') + '\n;this.api = { drawStreams, drawUsageRing, drawOvSay, drawScan, drawTag, drawDrones, drawWeatherBack, drawWeatherFront, drawReport, hitReport, drawBossBack, drawBossFront, drawReach, drawNotes, drawFakeError, noteAt, fakeErrorOkAt };', sandbox);
 const api = sandbox.api;
 const run = (label, fn) => { try { fn(); check(label, true); } catch (err) { check(label, false, err.message); } };
 
@@ -112,6 +112,27 @@ while (world.fx.boss && world.fx.boss.phase === 'fight') { world.bossHit(); step
 step(300);
 snap = frame();
 run('boss fight: the explosion', () => api.drawBossFront(snap.fx.boss, snap.overlord));
+
+// Annoy mode (no mischief while the boss fight is still winding down).
+for (let i = 0; i < 100 && world.fx.boss; i++) step(100);
+for (const x of [a, b]) { world.setPinned(x, false); x.task = null; x.queue = []; x.react = null; x.meet = null; x.greetAt = Infinity; x.session.state = 'idle'; }
+const prankUntil = (x, kind, done) => {
+  for (let i = 0; i < 80 && !done(); i++) {
+    if (!x.mischief && !x.react && !x.queue.length) world.mischiefStart(x, kind); // (off a wall first, if it's on one)
+    step(100);
+  }
+  return done();
+};
+check('a buddy slaps a sticky note on the screen', prankUntil(a, 'note', () => (world.fx.notes || []).length > 0));
+check('a buddy pops up a fake error', prankUntil(b, 'fakeerror', () => !!world.fx.fakeError));
+snap = frame();
+sandbox.fx = snap.fx;
+run('sticky note', () => api.drawNotes(snap.fx.notes));
+const note0 = snap.fx.notes[0], err0 = snap.fx.fakeError;
+check('…which can be clicked off', !!note0 && !!api.noteAt(note0.x + 5, note0.y + 5));
+run('fake error dialog', () => api.drawFakeError(err0));
+check('…with an OK button', !!err0 && api.fakeErrorOkAt(err0.x + err0.w / 2, err0.y + err0.h - 25));
+for (const o of ['floor', 'wallR', 'wallL', 'ceil']) run(`reaching arm (${o})`, () => api.drawReach({ x: 500, y: 600, s: 3, o, alpha: 1, look: { body: '#d97757' }, reach: { x: 700, y: 400, k: 0.7 } }));
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

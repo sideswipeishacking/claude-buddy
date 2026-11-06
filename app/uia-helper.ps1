@@ -14,6 +14,23 @@ while ($true) {
   $line = [Console]::In.ReadLine()
   if ($null -eq $line) { break }
   try {
+    if ($line -eq 'taskbar') {
+      # The taskbar's app buttons (pinned and running) on the main taskbar, as screen rectangles.
+      $tray = $AE::RootElement.FindFirst($Scope::Children, (New-Object System.Windows.Automation.PropertyCondition($AE::ClassNameProperty, 'Shell_TrayWnd')))
+      $buttons = @()
+      if ($null -ne $tray) {
+        $btn = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+        foreach ($e in $tray.FindAll($Scope::Descendants, $btn)) {
+          $id = [string]$e.Current.AutomationId
+          $cls = [string]$e.Current.ClassName
+          if (-not ($id.StartsWith('Appid:') -or $cls -eq 'Taskbar.TaskListButtonAutomationPeer' -or $cls -eq 'MSTaskListWClass')) { continue }
+          $r = $e.Current.BoundingRectangle
+          if (-not $r.IsEmpty -and $r.Width -gt 0) { $buttons += [pscustomobject]@{ x = $r.X; y = $r.Y; w = $r.Width; h = $r.Height } }
+        }
+      }
+      [Console]::Out.WriteLine((@{ ok = $true; buttons = $buttons } | ConvertTo-Json -Compress -Depth 4))
+      continue
+    }
     $hwnd = [IntPtr][Int64]($line.Split(' ')[1])
     $root = $AE::FromHandle($hwnd)
     $cond = New-Object System.Windows.Automation.PropertyCondition($AE::ClassNameProperty, 'UIItemsView')

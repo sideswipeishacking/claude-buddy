@@ -230,7 +230,8 @@ const cookiesBefore = world.items.filter((i) => i.kind === 'cookie').length;
 const dr = world.droneLaunch('snack', ca);
 check('a drone takes off from the Overlord', !!dr && world.snapshot(now).fx.drones.length === 1);
 let snacked = false;
-run(10000, () => { if (ca.react && ca.react.anim === 'snack') snacked = true; return snacked && !world.fx.drones.length; });
+// (Caught means a munch is coming: it may have to finish a chat with a friend first.)
+run(10000, () => { if ((ca.react && ca.react.anim === 'snack') || ca.queue.some((q) => q.anim === 'snack')) snacked = true; return snacked && !world.fx.drones.length; });
 check('…drops a cookie on its buddy, who eats it', snacked || world.items.filter((i) => i.kind === 'cookie').length > cookiesBefore);
 check('…and flies back', world.fx.drones.length === 0);
 
@@ -258,6 +259,7 @@ run(9000);
 check('…and clear up again', !world.snapshot(now).fx.weather);
 
 for (const x of [ca, cb]) { x.task = null; x.queue = []; x.react = null; }
+run(4000, () => ['auto', 'wall', 'ceil', 'float'].includes(ca.mode)); // (not mid-jump: the team is whoever's standing or climbing)
 check('boss fight: it starts', world.bossStart() && world.ov.mode === 'boss' && ca.task && ca.task.type === 'boss');
 run(4000);
 check('…the buddies line up under it', world.fx.boss && world.fx.boss.phase === 'fight');
@@ -271,6 +273,97 @@ for (let i = 0; i < 40 && world.fx.boss && world.fx.boss.phase === 'fight'; i++)
 check('…until it is defeated', world.fx.boss && world.fx.boss.phase === 'win');
 run(6000, () => !world.fx.boss);
 check('…then it pieces itself together and goes home, and everyone is free again', !world.fx.boss && !ca.task && !cb.task && !world.ov.red);
+
+// ---- 8. Done hops: a finished buddy jumps at your cursor but never quite touches it.
+{
+  for (const x of [...world.buddies.values()]) world.remove(x.id, { goodbye: false }); // just this one from here on
+  const d = make('erin', 700, 'notes');
+  d.greetAt = Infinity;
+  run(2000, () => d.mode === 'auto' && !d.react);
+  d.session.state = 'idle'; d.session.attention = 'done'; d.ackDone = false; d.hop = null;
+  cursor = { x: 760, y: 560, speed: 0 };
+  let jumped = 0, touched = false, ticked = false;
+  run(9000, null, () => {
+    if (d.mode === 'air' && d.vy < -100) jumped++;
+    const top = d.y - 11.5 * d.scale - 4, hw = 10 * d.scale + 4;
+    if (Math.abs(cursor.x - d.x) <= hw && cursor.y >= top && cursor.y <= d.y + 4) touched = true;
+    if (d.mode === 'air' && d.bubble === '✓') ticked = true;
+  });
+  check('a buddy whose turn is done jumps up at your cursor', jumped > 0);
+  check('…never quite reaching it (that would count as hovering)', !touched);
+  check('…and keeps its ✓ up in the air', ticked);
+  cursor = { x: 760, y: 560, speed: 0, hidden: true };
+  world.focusWin = { id: 'fw', rect: { x: 1100, y: 200, width: 400, height: 300 }, maximized: false };
+  let towardWindow = false;
+  run(10000, null, () => { if (Math.abs(d.x - 1300) < 160) towardWindow = true; });
+  check('cursor hidden: it jumps toward the middle of the focused window instead', towardWindow, `x=${d.x | 0}`);
+  d.ackDone = true;
+  run(3000);
+  check('once you hover or click it, it stops', !d.hop);
+  cursor = { x: 2600, y: 500, speed: 0 };
+
+  // ---- 9. Annoy mode.
+  const minimized = [], drags = [];
+  world.hooks.minimize = (id) => minimized.push(id);
+  world.hooks.taskbarButtons = () => [0, 1, 2, 3].map((i) => ({ x: 560 + i * 30, y: 832, w: 30, h: 32 })); // (the app's are promises)
+  world.hooks.taskbarDrag = (from, to) => { drags.push([from, to]); return { ok: true }; };
+  d.annoy = true; d.session.attention = null; d.lastWorkAt = now - 120e3; d.hop = null;
+  world.fx.nextMischief = 0;
+  run(5000, () => !!d.mischief);
+  check('annoy mode: after a while idle and out, mischief strikes', !!d.mischief, d.mischief && d.mischief.kind);
+  world.mischiefEnd(d); d.queue = []; d.react = null;
+  const until = (kind, ms, done) => { world.mischiefEnd(d); d.queue = []; d.react = null; run(3000, () => d.mode === 'auto'); const ok = world.mischiefStart(d, kind); run(ms, () => done()); return ok; };
+  const said = () => (d.react && d.react.say) || (d.queue.find((q) => q.say) || {}).say || '';
+
+  cursor = { x: 900, y: 500, speed: 0 };
+  until('insult', 9000, () => !!said());
+  check('insults: a dry remark in a speech bubble', !!said(), said());
+  until('note', 4000, () => (world.fx.notes || []).length > 0);
+  const note = (world.fx.notes || [])[0];
+  check('sticky notes: it slaps one on your screen', !!note && world.snapshot(now).fx.notes.length === 1, note && note.text);
+  check('…and you can peel it off', world.noteOff(note.id) && !world.fx.notes.length);
+  until('fakeerror', 4000, () => !!world.fx.fakeError);
+  check('fake error: a pixel error dialog pops up', !!world.snapshot(now).fx.fakeError);
+  check('…OK closes it', world.fakeErrorOk() && !world.fx.fakeError);
+  world.focusWin = { id: 'fw', rect: { x: 500, y: 200, width: 600, height: 400 }, maximized: false };
+  let peeked = false;
+  until('photobomb', 8000, () => { if (d.mode === 'prank' && d.clipY === 600 && d.anim === 'wave') peeked = true; return peeked && !d.mischief; });
+  check('photobomb: it pops up from behind the bottom of your window and waves', peeked);
+  run(3000, () => d.mode === 'auto');
+  check('…then ducks away and is back where it was', d.mode === 'auto' && !d.mischief);
+  cursor = { x: 900, y: 500, speed: 0 };
+  let shadowed = false, close = false;
+  until('shadow', 6000, () => { if (d.mode === 'prank' && Math.hypot(d.x - cursor.x, d.y - 5.75 * d.scale - cursor.y) < 160) shadowed = true; if (Math.hypot(d.x - cursor.x, d.y - 5.75 * d.scale - cursor.y) < 20) close = true; cursor = { x: 900 + Math.sin(now / 300) * 200, y: 500, speed: 0 }; return false; });
+  check('shadow: it follows right behind your cursor', shadowed);
+  check('…without touching it', !close);
+  world.mischiefEnd(d);
+  run(3000, () => d.mode === 'auto');
+  let hops = 0;
+  cursor = { x: 900, y: 400, speed: 0 };
+  until('hopper', 8000, () => { if (d.mode === 'air' && d.vy < -100) hops++; return false; });
+  check('cursor hopper: it keeps jumping at your cursor', hops > 0);
+
+  world.setWindows([{ id: 'w9', title: 'editor', maximized: false, rect: { x: 300, y: 300, width: 700, height: 400 } }]);
+  world.focusWin = { id: 'w9', rect: { x: 300, y: 300, width: 700, height: 400 }, maximized: false };
+  let reached = false;
+  until('minimize', 30000, () => { if (d.reach && d.reach.k > 0.9) reached = true; return minimized.length > 0; });
+  check('minimize: it climbs onto the window, stares, slowly reaches out...', reached);
+  check('…and really minimizes it', minimized[0] === 'w9');
+  run(4000);
+  minimized.length = 0;
+  world.setWindows([{ id: 'w9', title: 'editor', maximized: false, rect: { x: 300, y: 300, width: 700, height: 400 } }]);
+  let teased = '';
+  until('closetease', 30000, () => { const t = said(); if (t) teased = t; return !!teased; });
+  check('close-button tease: it reaches for the X and pulls back', teased === 'JUST KIDDING.' && minimized.length === 0, teased);
+  world.setWindows([]);
+  world.focusWin = null;
+  let pulled = false;
+  until('taskbar', 30000, () => { if (d.mischief && d.mischief.phase === 'drag') pulled = true; return drags.length > 0 && !d.mischief; });
+  check('taskbar shuffle: it walks over and drags a pinned app a slot over', pulled && drags.length === 1 && Math.abs(Math.abs(drags[0][1].x - drags[0][0].x) - 30) < 10, drags[0] && JSON.stringify(drags[0]));
+  d.annoy = false;
+  world.mischiefEnd(d);
+  world.remove(d.id, { goodbye: false });
+}
 
 Math.random = realRandom;
 console.log(failures ? `\n${failures} check(s) failed` : '\nall checks passed');

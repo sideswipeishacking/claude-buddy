@@ -11,7 +11,7 @@ Claude Buddy is an Electron desktop app for Windows, macOS and Linux. Pixel budd
 ```bash
 npm install
 npm start                                   # run the app from this folder
-npm test                                    # tools/features-test.js + climb-test.js + life-test.js + fx-smoke-test.js
+npm test                                    # tools/features-test.js + climb-test.js + life-test.js + fx-smoke-test.js + handover-test.js
 node tools/headless-test.js                 # behaviour trace for two simulated sessions
 node tools/privacy-check.js                 # personal-data scan; must pass before any commit (pre-commit hook in .githooks)
 node bin/claude-buddy.js install            # copy to the install dir, npm install, register the plugin (local marketplace)
@@ -38,7 +38,7 @@ claude plugin validate .                    # validate marketplace.json (and .cl
 - `POST /debug/forget?id=` removes a buddy and its registry entry.
 - `GET /debug/overlay` shows each overlay's mouse capture, hover, its last mouse events, and a main-process trace (hover/capture/grab/release/tower/ov-action, every real left press as `os-down`, and any `unstick`).
 - `POST /debug/click?x=&y=[&button=right][&step=move|down|up]` injects mouse input straight into the overlay under a point (DIPs), without the real mouse.
-- `POST /debug/act?do=…` triggers behaviours. `do=limit&secs=N&id=<session>` plays the usage-limit show and never sends a real prompt.
+- `POST /debug/act?do=…` triggers behaviours. `do=limit&secs=N&id=<session>` plays the usage-limit show and never sends a real prompt. `do=done&id=` fakes a finished turn (the done hops). `do=mischief&kind=<kind>&id=` starts one bit of annoy-mode mischief: `minimize` and `taskbar` act on real windows and the real mouse, so don't use those two on someone's machine. `do=moves&id=` lists the "Move to session" choices; `do=move&id=&to=<session>` moves a buddy.
 - Logs and `state.json` are in Electron's userData (`%APPDATA%\Claude Buddy`, `~/Library/Application Support/Claude Buddy`, `~/.config/Claude Buddy`). `error.log` writes the same message at most once a minute; `events.log` has hook timing only. The install dir has `setup.log`.
 
 ## Architecture
@@ -60,11 +60,14 @@ Data flows one way: **hook → HTTP → `Sessions` → `World` → overlay rende
   - `wall`, `ceil`: on a surface;
   - `birth`, `script`, `doom`: animation-driven;
   - `enter`, `ride`: walking into the skyscraper / riding its elevator out (not drawn, not clickable);
-  - `hell`: banished and hidden.
+  - `hell`: banished and hidden;
+  - `carried`: hanging from a drone (spectacle.js);
+  - `prank`: placed by a bit of mischief (photobomb, shadow), drawn but not clickable.
 
-  `think()` is a priority list: hide → limit panic → reaction queue → drag hint → typing → task → hover → work/idle. `world.ov` is the Overlord and `world.doom` the usage-limit state machine. `tick()` isolates each buddy in try/catch and calls `recover()`.
+  `think()` is a priority list: hide → limit panic → reaction queue → drag hint → typing → task → mischief → hover → separation / lobby clear → alert → work/idle. `world.ov` is the Overlord and `world.doom` the usage-limit state machine. `tick()` isolates each buddy in try/catch and calls `recover()`.
   - `world.tower` is the skyscraper (bottom-left of the primary display): `goHome()` gives a buddy a `home` task, it walks in (`mode 'enter'`), leaves `world.buddies` and rides the elevator up; `leaveHome()` adds a buddy in `mode 'ride'` that appears at the door after the ride down. main.js feeds it the residents (`updateResidents()`, from the registry). Only brand-new buddies are built (printed); known ones come out of the tower.
   - `app/spectacle.js` is mixed into `World` (end of world.js): `world.fx` holds the Overlord's shows (menu, patrol, remarks `ovSay`, holo-report, drones, weather, boss fight). Overlord modes for shows: `patrol`, `report`, `boss`; buddies carried by a drone are in `mode 'carried'`; the boss fight is a `boss` task. `fxCancel()` stops every show when the usage limit or a new build takes over. `app/overlay-fx.js` draws them; `tools/fx-smoke-test.js` runs those draw functions in Node.
+  - `app/mischief.js` is mixed in the same way: done hops (`doneHopTick`: a buddy with a ✓ jumps toward the cursor, or the focused window's middle when the cursor is hidden, never touching it) and annoy mode (`b.annoy`, `mischiefCheck` → `mischiefStart` → `mischiefTick`; one buddy at a time, only after 90 s idle and out). The real actions go through `world.hooks.minimize`, `taskbarButtons` (UI Automation) and `taskbarDrag` (`platform.slowDrag`); main.js sets `mischiefInput` during the drag so the overlays stay click-through. Hooks may answer synchronously (tests) or with a promise (`settle()`).
   - Fetch and home tasks survive grabs, file feeding and `recover()` (`keepErrand`); both have no-progress escapes so they can't block the work animations forever. Idle buddies meet up (`b.meet`, `findFriend`, `meetTick`) and play a scene from `pickScene()` with `say:` lines in speech bubbles.
 - **`app/main.js`** is the Electron main process: store and registry, the HTTP server and the 60 Hz tick, per-display click-through overlays, menus, usage polling, limit detection and the resume prompt, and the Windows file-dialog watcher.
   - When an event arrives it calls `noteClient()` to resolve the session's app right away. The hook's own process is short-lived, so this can't be done lazily later.
@@ -88,9 +91,10 @@ Data flows one way: **hook → HTTP → `Sessions` → `World` → overlay rende
 - In Git Bash on this project, quoted heredocs still mangle backslashes, so patch files containing `\n` or `\\` with the Edit tool.
 - Electron 45's main-process `clipboard` is the async web API (`readText()` returns a Promise). On Windows use `win32.saveClipboard` / `restoreClipboard` / `setClipboard`; those need an owner window (`setClipboardOwner`, set to an overlay) or Chromium apps paste nothing.
 - `uprightFrom()` converts a wall/ceiling position to feet and sets mode `air`. Measure with `centre(b)` first, since `centre()` needs the wall/ceiling object.
-- Overlay clicks must not change capture or open windows while the left button is down: skyscraper parts and the dialog's Open act on `click` (after release), and `applyCapture()` keeps capture until the button is up. As a safety net, a real left press over our things that the overlay never acknowledges (`press` IPC) gets `unstickOverlay()`: release the button inside it, then rebuild the overlay.
+- Overlay clicks must not change capture or open windows while the left button is down: skyscraper parts and the dialog's Open act on `click` (after release), and `applyCapture()` keeps capture until the button is up. As a safety net, a real left press over our things that the overlay never acknowledges (`press` IPC) gets `unstickOverlay()`, a ladder: log `inputDiagnostics()`, release any mouse capture and close stray menus, then rebuild the overlays, and last `app.relaunch()` (at most every 10 minutes, `store.lastRelaunch`). `captureWatchdog()` also releases a capture our window holds with no button down.
 - The skyscraper is drawn on whole device pixels per art pixel (`round(ts * dpr)`), the same grid sprites are rasterised on; `towerGeom()` already snaps `ts` with the display's `scale` (scaleFactor). Mixing a fractional `ts` with rasters makes wide rooms drift into the elevator shaft at 125%.
 - The Overlord has no menu any more: its hover panel (`#ovcard` in overlay.html) sends `ov-action`. Skyscraper clicks send `tower` {act: toggle | switch | room}.
 - Quitting from the panel/tray (`quitApp()`) or `claude-buddy stop` (`/quit?home=1`) sends everyone home. A plain `/quit` (what install/setup use to restart) keeps buddies active so they're restored.
-- `Sessions` keeps a session's record across `SessionEnd` (state `ended`) and revives it if the same id carries on (`resumed`): Claude apps restart sessions under the same id. main.js waits 45 s after an end before sending the buddy home, and `bindSession()` re-links a buddy to its session's live record on every event.
+- `Sessions` keeps a session's record across `SessionEnd` (state `ended`) and revives it if the same id carries on (`resumed`): Claude apps restart sessions under the same id. main.js waits 45 s after an end before sending the buddy home (`homeAfterEnd` marks that it went because its session ended), and `bindSession()` re-links a buddy to its session's live record on every event.
+- A buddy's id **is** its session id (`world.buddies`, `store.registry`, the tower's residents and rides). A forked or continued chat in the Claude app is a new session whose transcript starts with the old chat's lines, old `sessionId` and all (`handover.lineage()`). Moving a buddy is `reassign()` in main.js: `handover.moveEntry()` for the registry (look, name, room and floor move; folder, app and transcript stay with the session; a buddy already there swaps) plus `world.rekey()`. `followCheck()` moves it on its own once the old session has ended or been quiet for 10 minutes (`s.lastHookAt`: real hook events only, since turning a buddy on bumps `lastEventAt`).
 - The usage-limit `RESUME_PROMPT` must only go to sessions recorded as interrupted (`StopFailure` rate_limit during or shortly before the confirmed limit).

@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.4.0
+
+- **Done means jump.** When Claude finishes its turn, the buddy hops up at your cursor (never quite reaching it, since that would count as hovering) until you notice it. No cursor on screen? It jumps toward the middle of the window you're in.
+- **Annoy mode** (right-click, or `/buddy annoy on`; off by default). Once a buddy has been out and idle for a while, it gets up to mischief every few minutes, one buddy at a time: cursor hopping, dry remarks, photobombs, shadowing your cursor, sticky notes, a fake error, and a few things that are real. It may minimize a window, tease the close button, or slowly drag an app on your taskbar one slot over (it lets go as soon as you move the mouse). `/buddy annoy off` makes it behave.
+- **Move a buddy to another session.** The Claude app gives a forked or continued chat a new session, and the buddy used to stay behind on the old one (still on screen, but no longer showing what Claude was doing). Now:
+  - the buddy follows by itself once the old session has ended or been quiet for 10 minutes;
+  - `/buddy take <name>` in any session moves that buddy there (plain `/buddy take` takes the buddy of the chat it continues), and if the session already had a buddy, the two swap;
+  - right-click → **Move to session** does the same from the buddy's side.
+
+  It keeps its look, name, room and floor.
+- **Fixed:** turning a buddy back on didn't show typing until the session's next message.
+- **Fixed:** a leap to a window's top edge from straight below could fall a few pixels short, over and over.
+- **Fixed:** the left-click safety net now works through a ladder: it releases a stuck mouse capture and closes stray menus first, then rebuilds the overlays, and as a last resort restarts Claude Buddy (at most once every 10 minutes). It also logs what was holding the mouse, to help track down the cause.
+- **Fixed:** a dropped snack could miss a buddy that was mid-jump, and buddies leaving the skyscraper could be pulled into a chat right in front of the door.
+
 ## 2.3.0
 
 - **The Overlord, hover vs click.** Hovering it shows only your usage limits, who's working / out / home / asleep, and today's numbers (prompts, tool calls, files edited, minutes worked, sub-agents, busiest buddy). Clicking it brings it all the way out of its corner with every option.

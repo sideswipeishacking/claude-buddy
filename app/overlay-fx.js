@@ -347,3 +347,103 @@ function drawBossFront(B, o) {
   pixelText(B.phase === 'win' ? 'DEFEATED!' : B.phase === 'lose' ? 'TIME UP' : `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`, x0 + w - 60, by + 1, 2, '#f6e9df', 1);
   if (B.phase === 'intro' || (B.phase === 'fight' && B.t < 8000)) pixelText('CLICK THE OVERLORD TO HELP YOUR BUDDIES!', bx - 20 * 8, by + 48, 2, '#ffe12e', 0.6 + 0.4 * Math.sin(Date.now() / 200), '#1f1e1d');
 }
+
+// ---------------------------------------------------------------- annoy mode (mischief.js)
+/** Where a buddy's claw starts and its body centre is, for each way it can be stuck to something. */
+function bodyCentre(b) {
+  const h = 5.75 * b.s;
+  if (b.o === 'wallR') return { x: b.x - h, y: b.y };
+  if (b.o === 'wallL') return { x: b.x + h, y: b.y };
+  if (b.o === 'ceil') return { x: b.x, y: b.y + h };
+  return { x: b.x, y: b.y - h };
+}
+
+/** An arm stretching out of the buddy toward a point (k: how far it has got), ending in a claw. */
+function drawReach(b) {
+  const R = b.reach;
+  if (!R || R.k <= 0 || b.alpha <= 0) return;
+  const c = bodyCentre(b), dx = R.x - c.x, dy = R.y - c.y, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d;
+  const start = 8 * b.s, len = Math.max(0, (d - start) * R.k), s = b.s;
+  const col = (b.look && b.look.body) || '#d97757';
+  dip();
+  ctx.globalAlpha = b.alpha;
+  for (let t = 0; t <= len; t += s * 0.75) {
+    const x = c.x + ux * (start + t) - origin.x, y = c.y + uy * (start + t) - origin.y;
+    ctx.fillStyle = '#00000033'; ctx.fillRect(Math.round(x - s + 1), Math.round(y - s + 1), Math.round(s * 2), Math.round(s * 2));
+    ctx.fillStyle = col; ctx.fillRect(Math.round(x - s), Math.round(y - s), Math.round(s * 2), Math.round(s * 2));
+  }
+  // The claw: a little pincer that opens wider the closer it gets.
+  const ex = c.x + ux * (start + len) - origin.x, ey = c.y + uy * (start + len) - origin.y, px = -uy, py = ux, open = (1 + R.k) * s;
+  ctx.fillStyle = col;
+  for (const side of [-1, 1]) for (let i = 0; i < 3; i++) ctx.fillRect(Math.round(ex + ux * i * s + px * side * open - s * 0.75), Math.round(ey + uy * i * s + py * side * open - s * 0.75), Math.round(s * 1.5), Math.round(s * 1.5));
+  dev();
+}
+
+function noteAt(mx, my) {
+  const N = fx && fx.notes;
+  if (!N) return null;
+  for (let i = N.length - 1; i >= 0; i--) {
+    const n = N[i], x = n.x - origin.x, y = n.y - origin.y;
+    if (mx >= x && mx <= x + n.w && my >= y && my <= y + n.h) return n;
+  }
+  return null;
+}
+
+function fakeErrorOkAt(mx, my) {
+  const E = fx && fx.fakeError;
+  if (!E) return false;
+  const bx = E.x - origin.x + E.w / 2 - 40, by = E.y - origin.y + E.h - 38;
+  return mx >= bx && mx <= bx + 80 && my >= by && my <= by + 26;
+}
+
+function inFakeError(mx, my) {
+  const E = fx && fx.fakeError;
+  return !!E && mx >= E.x - origin.x && mx <= E.x - origin.x + E.w && my >= E.y - origin.y && my <= E.y - origin.y + E.h;
+}
+
+function drawNotes(N) {
+  if (!N || !N.length) return;
+  for (const n of N) {
+    const x = n.x - origin.x, y = n.y - origin.y;
+    if (x > innerWidth || y > innerHeight || x + n.w < 0 || y + n.h < 0) continue;
+    const drop = Math.max(0, 1 - n.t / 220), sy = y - drop * 30; // slapped on: it drops in
+    dip();
+    ctx.globalAlpha = 0.25; ctx.fillStyle = '#000'; ctx.fillRect(Math.round(x + 4), Math.round(sy + 5), n.w, n.h);
+    ctx.globalAlpha = 1; ctx.fillStyle = n.c; ctx.fillRect(Math.round(x), Math.round(sy), n.w, n.h);
+    ctx.fillStyle = '#00000018'; ctx.fillRect(Math.round(x), Math.round(sy), n.w, 10);
+    // A folded corner and a strip of tape.
+    ctx.fillStyle = '#00000022'; ctx.beginPath(); ctx.moveTo(x + n.w - 16, sy + n.h); ctx.lineTo(x + n.w, sy + n.h - 16); ctx.lineTo(x + n.w, sy + n.h); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 0.7; ctx.fillStyle = '#f4f1ea'; ctx.fillRect(Math.round(x + n.w / 2 - 18), Math.round(sy - 6), 36, 12);
+    dev();
+    wrapWords(n.text, 11).slice(0, 4).forEach((l, i) => pixelText(l, x + 10, sy + 18 + i * 16, 2, '#3b3743', 1));
+    if (hoverId === 'note:' + n.id) pixelText('CLICK TO PEEL OFF', x, sy + n.h + 6, 2, '#f6e9df', 1, '#1f1e1d');
+  }
+}
+
+function drawFakeError(E) {
+  if (!E) return;
+  const x = E.x - origin.x, y = E.y - origin.y;
+  if (x > innerWidth || y > innerHeight || x + E.w < 0 || y + E.h < 0) return;
+  const pop = Math.min(1, E.t / 160);
+  dip();
+  ctx.globalAlpha = pop * 0.3; ctx.fillStyle = '#000'; ctx.fillRect(Math.round(x + 6), Math.round(y + 6), E.w, E.h);
+  ctx.globalAlpha = pop;
+  ctx.fillStyle = '#c9c9c9'; ctx.fillRect(Math.round(x), Math.round(y), E.w, E.h); // classic grey dialog
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(Math.round(x), Math.round(y), E.w, 2); ctx.fillRect(Math.round(x), Math.round(y), 2, E.h);
+  ctx.fillStyle = '#5a5a5a'; ctx.fillRect(Math.round(x), Math.round(y + E.h - 2), E.w, 2); ctx.fillRect(Math.round(x + E.w - 2), Math.round(y), 2, E.h);
+  ctx.fillStyle = '#1e3a8a'; ctx.fillRect(Math.round(x + 3), Math.round(y + 3), E.w - 6, 24); // title bar
+  // A red "X" icon.
+  ctx.fillStyle = '#d6455d'; ctx.beginPath(); ctx.arc(x + 32, y + 62, 16, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  for (let i = -7; i <= 7; i++) { ctx.fillRect(Math.round(x + 32 + i - 1.5), Math.round(y + 62 + i - 1.5), 3, 3); ctx.fillRect(Math.round(x + 32 + i - 1.5), Math.round(y + 62 - i - 1.5), 3, 3); }
+  // The OK button.
+  const bx = x + E.w / 2 - 40, by = y + E.h - 38, hot = hoverId === 'fakeerr';
+  ctx.fillStyle = hot ? '#dcdcdc' : '#c9c9c9'; ctx.fillRect(Math.round(bx), Math.round(by), 80, 26);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(Math.round(bx), Math.round(by), 80, 2); ctx.fillRect(Math.round(bx), Math.round(by), 2, 26);
+  ctx.fillStyle = '#3b3743'; ctx.fillRect(Math.round(bx), Math.round(by + 24), 80, 2); ctx.fillRect(Math.round(bx + 78), Math.round(by), 2, 26);
+  dev();
+  pixelText('ERROR', x + 10, y + 9, 2, '#ffffff', pop);
+  pixelText('TOO MUCH CODING.', x + 60, y + 48, 2, '#1f1e1d', pop);
+  pixelText('TAKE A BREAK?', x + 60, y + 66, 2, '#1f1e1d', pop);
+  pixelText('OK', bx + 32, by + 8, 2, '#1f1e1d', pop);
+}

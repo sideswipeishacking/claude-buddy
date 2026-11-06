@@ -18,6 +18,7 @@ const { Sessions } = require('./sessions');
 const { World, fullLook } = require('./world');
 const { runDemo } = require('./demo');
 const { deliver, openSession, resolveApp } = require('./deliver');
+const handover = require('./handover');
 
 // Sent to a session whose work the usage limit cut off, once the limit resets.
 const RESUME_PROMPT = 'Proceed, but double-check everything to make sure that nothing is left half-done';
@@ -129,6 +130,9 @@ const world = new World({
   removed(id) { if (store.registry[id]) { store.registry[id].active = false; saveStore(); } refreshTray(); },
   stale(id) { sendHome(id); },
   stats(id) { return todayStats().buddies[id] || null; },
+  minimize(id) { const h = winHandles.get(id); if (h) platform.minimize(h); },
+  taskbarButtons() { return uiaTaskbar(); },
+  taskbarDrag(from, to, ms) { return mischiefDrag(from, to, ms); },
   weather(kind) { remark(`Forecast: ${kind === 'storm' ? 'thunderstorms' : kind}.`, { force: true }); },
   bossOver(won) { store.bossFights = (store.bossFights || 0) + 1; if (won) store.bossWins = (store.bossWins || 0) + 1; saveStore(); },
   overlordBorn() { store.overlordBorn = true; saveStore(); },
@@ -255,8 +259,8 @@ function remember(s, b, active = true) {
   if (s.id.startsWith('demo-')) return;
   const prev = store.registry[s.id] || { created: Date.now() };
   store.registry[s.id] = {
-    ...prev, active, lastSeen: Date.now(), ts: Date.now(),
-    look: b ? b.look : prev.look, muted: b ? b.muted : prev.muted, pinned: b ? b.pinned : prev.pinned, where: s.where || prev.where,
+    ...prev, active, lastSeen: Date.now(), ts: Date.now(), homeAfterEnd: active ? 0 : prev.homeAfterEnd || 0,
+    look: b ? b.look : prev.look, muted: b ? b.muted : prev.muted, pinned: b ? b.pinned : prev.pinned, annoy: b ? !!b.annoy : !!prev.annoy, where: s.where || prev.where,
     name: s.name || prev.name, nickname: s.nickname || prev.nickname || '', source: s.source || prev.source, cwd: s.cwd || prev.cwd, transcript: s.transcript || prev.transcript,
     client: s.client || prev.client, app: appRecord(s) || prev.app,
   };
@@ -298,7 +302,7 @@ function summon(s, cmd = {}, { birth = true } = {}) {
     const look = lookFor(saved, cmd);
     // A buddy that already lives in the skyscraper takes the elevator down; only brand-new buddies get printed.
     b = saved && birth ? world.leaveHome(s, look) : world.add(s, { look, x: screen.getCursorScreenPoint().x, birth });
-    if (saved) { b.muted = !!saved.muted; b.pinned = !!saved.pinned; }
+    if (saved) { b.muted = !!saved.muted; b.pinned = !!saved.pinned; b.annoy = !!saved.annoy; }
   } else if (world.homeBound(b)) {
     b.task = null; // it was on its way home: it stays out after all
     bindSession(b, s);
@@ -310,11 +314,15 @@ function summon(s, cmd = {}, { birth = true } = {}) {
   return b;
 }
 
-/** Off duty: it walks back to the skyscraper and rides up to its floor (demo buddies just poof). */
-function sendHome(id, { hurry = false } = {}) {
+/**
+ * Off duty: it walks back to the skyscraper and rides up to its floor (demo buddies just poof).
+ * `ended`: its session ended (rather than you sending it home), so a chat that carries on under a
+ * new session may bring it back out (followCheck).
+ */
+function sendHome(id, { hurry = false, ended = false } = {}) {
   const s = sessions.map.get(id);
   const demo = String(id).startsWith('demo-');
-  if (store.registry[id]) { store.registry[id].active = false; saveStore(); }
+  if (store.registry[id]) { store.registry[id].active = false; store.registry[id].homeAfterEnd = ended ? Date.now() : 0; saveStore(); }
   else if (s && !demo) remember(s, world.get(id), false);
   if (demo || !store.registry[id] || !world.goHome(id, { hurry })) world.remove(id);
   updateResidents();
@@ -364,13 +372,124 @@ sessions.on('update', (s) => {
   if (s.state === 'ended') return;
   if (!world.has(s.id) && (isOn(s.id) || store.autoSummon)) summon(s);
   else if (store.registry[s.id]) { store.registry[s.id].lastSeen = Date.now(); store.registry[s.id].ts = Date.now(); saveStore(); }
+  else if (!world.has(s.id)) followCheck(s);
 });
+
+// ---------------------------------------------------------------- moving a buddy to another session
+// A buddy belongs to one session id. The Claude app gives a forked (or continued) chat a new session,
+// and the buddy stayed behind with the old id: still on screen, but nothing it heard about any more.
+// So a buddy can move: from its menu ("Move to session"), with "/buddy take <name>" typed in the new
+// session, or on its own when a chat carries on under a new id and the old one has gone quiet.
+const appStartedAt = Date.now();
+const FOLLOW_QUIET = 10 * 60e3;
+
+/** The sessions whose chat this one continues (oldest first; [] for a chat of its own). Read once. */
+function lineageOf(s) {
+  if (s.lineage) return Promise.resolve(s.lineage);
+  if (s.lineageP) return s.lineageP;
+  if (!s.transcript || Date.now() - (s.lineageTry || 0) < 20e3) return Promise.resolve([]);
+  s.lineageTry = Date.now();
+  s.lineageP = handover.lineage(s.transcript, s.id)
+    .then((ids) => { s.lineage = ids; return ids; }, () => []) // (not written yet: tried again later)
+    .finally(() => { s.lineageP = null; });
+  return s.lineageP;
+}
+
+/**
+ * Move the buddy registered under `fromId` onto session `to`. It keeps its look, name, room and
+ * floor; if `to` had a buddy of its own, the two trade sessions. Returns { name, swapped } or null.
+ */
+function reassign(fromId, to, { auto = false } = {}) {
+  const toId = to && to.id;
+  if (!store.registry[fromId] || !toId || fromId === toId || !handover.UUID.test(toId) || to.state === 'ended') return null;
+  const from = sessions.get(fromId);
+  const had = !!store.registry[toId];
+  // An open Workshop edits whoever has its id: put back a look it was only previewing, and close it.
+  for (const id of [fromId, toId]) {
+    const w = workshops.get(id);
+    if (w && !w.isDestroyed()) { if (!w.workshop.saved && world.get(id)) world.setLook(id, w.workshop.original); w.workshop.saved = true; w.close(); }
+  }
+  const moved = handover.moveEntry(store.registry, fromId, toId);
+  to.nickname = moved.a.nickname || '';
+  from.nickname = moved.b ? moved.b.nickname || '' : '';
+  const map = new Map([[fromId, to]]);
+  if (had) map.set(toId, from);
+  world.rekey(map);
+  if (watched && map.has(watched.buddyId)) watched.buddyId = map.get(watched.buddyId).id;
+  if (!had) {
+    // Nothing waits on the old session any more.
+    clearTimeout(endTimers.get(fromId)); endTimers.delete(fromId);
+    releasePermissions(fromId, null);
+  } else {
+    const other = world.get(fromId);
+    if (other && from.state === 'ended') sendHome(fromId, { ended: true });
+    else remember(from, other || null, !!moved.b.active);
+  }
+  const b = summon(to); // (already out, or it rides down from its floor)
+  b.push('hi', 1500, { say: auto ? 'FOLLOWED YOU HERE.' : 'MOVED IN!', sound: 'chirp' });
+  logEvent({ session_id: toId, hook_event_name: auto ? 'buddy-followed' : 'buddy-moved', tool_name: String(fromId).slice(0, 8) });
+  refreshTray();
+  return { name: handover.label(moved.a), swapped: moved.b ? handover.label(moved.b) : null };
+}
+
+/**
+ * A chat carrying on under a new session id takes its buddy along, once the old session has ended
+ * or gone quiet for a while. (While both are in use the buddy stays put: move it by hand.) Not a
+ * buddy you sent home yourself.
+ */
+function followCheck(s) {
+  if (!handover.UUID.test(s.id) || s.state === 'ended') return;
+  lineageOf(s).then((ids) => {
+    if (!ids.length || world.has(s.id) || store.registry[s.id] || s.state === 'ended') return;
+    const now = Date.now();
+    const id = [...ids].reverse().find((x) => store.registry[x]);
+    const e = id && store.registry[id];
+    if (!e || !(e.active || (e.homeAfterEnd && now - e.homeAfterEnd < 24 * 3600e3))) return;
+    const p = sessions.map.get(id);
+    if (p && p.state === 'working') return;
+    const quiet = p && p.state === 'ended' ? Infinity : now - ((p && p.lastHookAt) || appStartedAt);
+    if (quiet >= FOLLOW_QUIET) reassign(id, s, { auto: true });
+  }).catch((err) => logError(err, 'follow'));
+}
+
+/** "/buddy take [name]", typed in the session that should get it. Returns the reply. */
+function takeBuddy(s, name) {
+  if (!handover.UUID.test(s.id)) return 'Only a real Claude Code session can take a buddy.';
+  const pick = handover.pickBuddy(store.registry, s.id, name, s.lineage || []);
+  if (!pick.id) {
+    const list = pick.names.length ? ` Your buddies: ${pick.names.join(', ')}.` : '';
+    if (!pick.names.length) return 'You have no other buddies yet. /buddy makes one for this session.';
+    return name ? `No buddy is called "${name}".${list}` : `Which one? Type /buddy take <name>.${list}`;
+  }
+  const r = reassign(pick.id, s);
+  if (!r) return 'That buddy could not move to this session.';
+  return r.swapped ? `${r.name} moved over to this session, and ${r.swapped} took its old one.` : `${r.name} moved over to this session. It keeps its look, name and room.`;
+}
+sessions.on('take', (s, name, out) => { out.message = takeBuddy(s, name); });
+
+/** "Move to session ▸": sessions used lately, a chat that continues this buddy's first. */
+function moveItems(b) {
+  const now = Date.now();
+  const list = [...sessions.map.values()]
+    .filter((s) => s.id !== b.id && handover.UUID.test(s.id) && s.state !== 'ended' && s.lastHookAt && now - s.lastHookAt < 12 * 3600e3)
+    .map((s) => ({ s, kin: (s.lineage || []).includes(b.id) ? 1 : 0 }))
+    .sort((x, y) => y.kin - x.kin || y.s.lastHookAt - x.s.lastHookAt)
+    .slice(0, 10);
+  if (!list.length) return [{ label: 'No other sessions yet (they show up once they do something)', enabled: false }];
+  const amp = (t) => String(t).replace(/&/g, '&&'); // (& underlines the next letter in a menu)
+  return list.map(({ s, kin }) => {
+    const other = world.get(s.id), saved = store.registry[s.id];
+    const task = s.task ? `  “${s.task.length > 36 ? s.task.slice(0, 35) + '…' : s.task}”` : '';
+    const note = kin ? '  ·  continues this chat' : other || saved ? `  ·  swaps with ${other ? other.session.displayName : handover.label(saved)}` : '';
+    return { label: amp(`${s.name}${task}  ·  ${s.source}  ·  ${handover.ago(s.lastHookAt, now)}${note}`), click: () => reassign(b.id, s) };
+  });
+}
 // A session that ends gets a little while before its buddy walks home: Claude apps end and restart
 // sessions under the same id (updates, plugin reloads, resuming a conversation).
 const endTimers = new Map();
 sessions.on('end', (s) => {
   clearTimeout(endTimers.get(s.id));
-  endTimers.set(s.id, setTimeout(() => { endTimers.delete(s.id); if (s.state === 'ended') sendHome(s.id); }, 45e3));
+  endTimers.set(s.id, setTimeout(() => { endTimers.delete(s.id); if (s.state === 'ended') sendHome(s.id, { ended: true }); }, 45e3));
 });
 sessions.on('resumed', (s) => { clearTimeout(endTimers.get(s.id)); endTimers.delete(s.id); bindSession(world.get(s.id), s); });
 sessions.on('done', (s) => { world.onDone(s.id); if (Math.random() < 0.12) remark(['Adequate.', 'Acceptable work, unit.', 'Another task conquered. For me.', 'Done? We shall see.'][Math.floor(Math.random() * 4)]); });
@@ -384,6 +503,16 @@ sessions.on('context-high', (s) => {
 sessions.on('attention', (s, kind) => world.onAttention(s.id, kind));
 sessions.on('permission-resolved', (s) => releasePermissions(s.id, null));
 sessions.on('custom', (s) => { summon(s); openWorkshop(s.id); });
+sessions.on('annoy', (s, on) => {
+  const b = summon(s);
+  b.annoy = on;
+  if (!on && b.mischief) world.mischiefEnd(b);
+  remember(s, b);
+});
+ipcMain.on('mischief', (e, { act, id } = {}) => {
+  if (act === 'note-off') world.noteOff(id);
+  else if (act === 'error-ok') world.fakeErrorOk();
+});
 sessions.on('helpers', (s, on) => {
   const b = summon(s);
   world.setLook(s.id, { ...b.look, helpers: on });
@@ -421,6 +550,7 @@ function restoreBuddies() {
     s.lastEventAt = saved.lastSeen;
     const b = world.restore(s, lookFor(saved));
     b.muted = !!saved.muted;
+    b.annoy = !!saved.annoy;
     b.pinned = !!saved.pinned;
   }
   saveStore();
@@ -891,20 +1021,26 @@ function buddyItems(b, point) {
     { label: 'Play fetch', click: () => world.playFetch(b, point) },
     { type: 'separator' },
     { label: 'Open project folder', enabled: !!s.cwd, click: () => shell.openPath(s.cwd) },
+    { label: 'Move to session', submenu: moveItems(b) },
     { label: 'Mute this buddy', type: 'checkbox', checked: b.muted, click: (i) => { b.muted = i.checked; save(); } },
+    { label: 'Annoy mode (mischief when it has nothing to do)', type: 'checkbox', checked: !!b.annoy, click: (i) => { b.annoy = i.checked; if (!i.checked && b.mischief) world.mischiefEnd(b); save(); } },
     { label: 'Hide for…', submenu: [5, 10, 30, 60].map((m) => ({ label: `${m} minutes`, click: () => world.hideFor(b, m) })) },
     { label: 'Send home', click: () => sendHome(id) },
   ];
 }
 
 let menuOpen = false; // a buddy's right-click menu is up (clicks on it aren't the overlay's)
+const openMenus = new Set();
+let trayMenuOpen = false;
+let mischiefInput = false; // a buddy is dragging something on the taskbar with the real mouse
 function showBuddyMenu(id, overlay) {
   const b = world.get(id);
   if (!b) return;
   const point = screen.getCursorScreenPoint();
   const menu = Menu.buildFromTemplate([{ label: `${b.session.displayName}  ·  ${b.session.card().status}`, enabled: false }, { type: 'separator' }, ...buddyItems(b, point)]);
   menuOpen = true;
-  menu.popup({ ...(overlay && !overlay.win.isDestroyed() ? { window: overlay.win } : {}), callback: () => { setTimeout(() => { menuOpen = false; }, 300); } });
+  openMenus.add(menu);
+  menu.popup({ ...(overlay && !overlay.win.isDestroyed() ? { window: overlay.win } : {}), callback: () => { openMenus.delete(menu); setTimeout(() => { menuOpen = false; }, 300); } });
 }
 
 // ---------------------------------------------------------------- unsticking an overlay
@@ -913,8 +1049,6 @@ function showBuddyMenu(id, overlay) {
 // over one of our things that the overlay never reports, and reset it: first by releasing the
 // button inside it, and if that didn't help, by rebuilding the overlay window.
 let pendingPress = null;
-let lastUnstick = 0;
-let lastRebuild = 0;
 function ourWindowAt(p) {
   return BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w.isVisible() && ![...overlays.values()].some((o) => o.win === w) && (() => {
     const r = w.getBounds();
@@ -931,24 +1065,83 @@ function overlayOnTop(o, p) {
   return top === own;
 }
 
-function unstickOverlay(o, p) {
-  if (o.win.isDestroyed()) return;
-  // Released the button already and it's still ignoring presses: rebuild it (at most every 2 minutes,
-  // in case something outside the app is what swallows the clicks).
-  const again = Date.now() - lastUnstick < 20e3 && Date.now() - lastRebuild > 120e3;
-  lastUnstick = Date.now();
-  if (again) lastRebuild = Date.now();
-  traceInput('unstick', { display: o.display.id, rebuild: again });
-  logError(new Error(again ? 'overlay still ignored a left press: rebuilt it' : 'overlay ignored a left press: released the button inside it'), 'input');
-  if (again) {
-    o.win.destroy();
-    overlays.delete(o.display.id);
-    rebuildOverlays();
-    return;
-  }
-  const lx = Math.round(p.x - o.display.bounds.x), ly = Math.round(p.y - o.display.bounds.y);
-  o.win.webContents.sendInputEvent({ type: 'mouseUp', x: lx, y: ly, button: 'left', clickCount: 1 });
+/**
+ * What we know when a left press goes missing, for error.log (window classes and program names,
+ * never titles of other apps' windows).
+ */
+async function inputDiagnostics(o, p) {
+  const phys = screen.dipToScreenPoint(p);
+  const ours = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+  const idOf = (w) => { const h = w.getNativeWindowHandle(); return h.length >= 8 ? h.readBigUInt64LE(0).toString() : String(h.readUInt32LE(0)); };
+  const nameOf = (id) => { const w = ours.find((x) => idOf(x) === id); return w ? `${w.getTitle() || 'untitled'}${w.isVisible() ? '' : ' (hidden)'}` : null; };
+  const cap = platform.captureId();
+  const at = platform.windowInfoAt(phys.x, phys.y);
+  let page = null;
+  try {
+    page = await o.win.webContents.executeJavaScript("window.__buddyDebug ? (() => { const d = window.__buddyDebug(); return { hover: d.hoverId ? String(d.hoverId).slice(0, 10) : null, grabbing: d.grabbing, placing: d.placing, last: d.inputLog.slice(-4).map((e) => e.type + e.button) }; })() : null");
+  } catch { /* page busy */ }
+  const focused = BrowserWindow.getFocusedWindow();
+  return {
+    capture: cap ? nameOf(cap) || 'not ours' : null,
+    under: at ? { cls: at.cls, exe: at.exe, ours: nameOf(at.id) } : null,
+    focused: focused ? focused.getTitle() : null, menus: openMenus.size, tray: trayMenuOpen, placing: !!placing, captureOn: o.captureOn, page,
+    visible: ours.filter((w) => w.isVisible()).map((w) => w.getTitle()),
+  };
 }
+
+/**
+ * A left press landed on an overlay that never saw it. Each miss within half a minute goes one step
+ * further: 1. let go of whatever holds the mouse (capture, menus, a stuck button inside the overlays);
+ * 2. rebuild the overlays; 3. restart Claude Buddy (buddies come straight back), which is what fixed
+ * it every time so far. Every step is written to error.log with what was going on.
+ */
+const stuck = { level: 0, at: 0 };
+async function unstickOverlay(o, p) {
+  if (o.win.isDestroyed()) return;
+  const now = Date.now();
+  if (now - stuck.at > 30e3) stuck.level = 0;
+  stuck.at = now; stuck.level++;
+  traceInput('unstick', { display: o.display.id, level: stuck.level });
+  const diag = await inputDiagnostics(o, p).catch((err) => ({ error: String(err && err.message) }));
+  logError(new Error(`overlay ignored a left press (step ${stuck.level}): ${JSON.stringify(diag)}`), 'input');
+  platform.releaseCapture();
+  for (const m of [...openMenus]) { try { m.closePopup(); } catch { /* gone */ } }
+  openMenus.clear(); menuOpen = false;
+  for (const ov of overlays.values()) {
+    if (ov.win.isDestroyed()) continue;
+    const lx = Math.round(p.x - ov.display.bounds.x), ly = Math.round(p.y - ov.display.bounds.y);
+    ov.win.webContents.sendInputEvent({ type: 'mouseUp', x: lx, y: ly, button: 'left', clickCount: 1 });
+  }
+  if (stuck.level === 2) {
+    for (const [id, ov] of [...overlays]) { ov.win.destroy(); overlays.delete(id); }
+    rebuildOverlays();
+  }
+  if (stuck.level >= 3 && now - (store.lastRelaunch || 0) > 10 * 60e3) {
+    store.lastRelaunch = now;
+    logError(new Error('overlays still ignored left presses: restarting Claude Buddy'), 'input');
+    try { clearTimeout(saveTimer); fs.writeFileSync(storeFile(), JSON.stringify(store, null, 2)); } catch { /* best effort */ }
+    app.relaunch();
+    app.exit(0);
+  }
+}
+
+// Mouse capture left behind by one of our windows (no button down, no menu open) is let go.
+let capSeen = null;
+function captureWatchdog(now, down) {
+  if (OS !== 'win32' || now - (captureWatchdog.at || 0) < 500) return;
+  captureWatchdog.at = now;
+  const cap = platform.captureId();
+  if (!cap || down || openMenus.size || trayMenuOpen || mischiefInput) { capSeen = null; return; }
+  if (!capSeen || capSeen.id !== cap) { capSeen = { id: cap, at: now }; return; }
+  if (now - capSeen.at > 1500) {
+    const w = BrowserWindow.getAllWindows().find((x) => { if (x.isDestroyed()) return false; const h = x.getNativeWindowHandle(); return (h.length >= 8 ? h.readBigUInt64LE(0).toString() : String(h.readUInt32LE(0))) === cap; });
+    logError(new Error(`released mouse capture left behind by ${w ? w.getTitle() || 'a window' : 'a window'} of ours`), 'input');
+    traceInput('capture-released', { by: w ? w.getTitle() : null });
+    platform.releaseCapture();
+    capSeen = null;
+  }
+}
+
 ipcMain.on('press', (e) => {
   const o = overlayFor(e.sender);
   if (o) o.lastPress = Date.now();
@@ -1094,10 +1287,10 @@ function createOverlay(display) {
 /** An overlay takes the mouse only while something of ours is under it (or you're placing a marker). */
 function applyCapture(o) {
   if (o.win.isDestroyed()) return;
-  let on = !!(o.caps.hover || o.caps.drop || placing);
+  let on = !!(o.caps.hover || o.caps.drop || placing) && !mischiefInput;
   // Never turn click-through in the middle of a click: the overlay would miss the button's release
   // and from then on ignore left presses. Let go once the button is up (the tick re-applies this).
-  if (!on && o.captureOn && platform.mouseDown()) on = true;
+  if (!on && o.captureOn && platform.mouseDown() && !mischiefInput) on = true;
   if (on !== o.captureOn) { o.captureOn = on; o.win.setIgnoreMouseEvents(!on, { forward: true }); traceInput('capture', { display: o.display.id, on, hover: o.caps.hover, drop: o.caps.drop, placing: !!placing }); }
 }
 
@@ -1133,7 +1326,7 @@ ipcMain.on('hover', (e, id) => {
   if (o) { o.caps.hover = !!id; applyCapture(o); }
   world.ov.hovered = id === 'overlord';
   if (id === 'overlord') world.ovKeep(world.ov.menu ? 6000 : 2500);
-  world.setHover(id && id !== 'overlord' && id !== 'dialog' && !String(id).startsWith('tower') ? id : null);
+  world.setHover(id && world.buddies.has(id) ? id : null);
 });
 ipcMain.on('grab', (e, id) => {
   world.grab(id);
@@ -1208,7 +1401,8 @@ function tick() {
 
   const anyHeld = [...world.buddies.values()].some((b) => b.mode === 'held');
   const down = platform.mouseDown();
-  if (down && !tick.wasDown) {
+  captureWatchdog(now, down);
+  if (down && !tick.wasDown && !mischiefInput) {
     const o = overlayAt(c.x, c.y);
     traceInput('os-down', { x: c.x, y: c.y, captureOn: o ? o.captureOn : null, hover: o ? o.caps.hover : null });
     // A left press on one of our things (the overlay has the mouse): the overlay should report it.
@@ -1218,7 +1412,7 @@ function tick() {
   }
   tick.wasDown = !!down;
   if (pendingPress && now - pendingPress.at > 300) { const P = pendingPress; pendingPress = null; unstickOverlay(P.o, P); }
-  try { world.tick(now, dt, { x: c.x, y: c.y, speed: cursorSpeed }, anyHeld ? down : null); } catch (err) { logError(err, 'world'); }
+  try { world.tick(now, dt, { x: c.x, y: c.y, speed: cursorSpeed, hidden: !platform.cursorShowing() }, anyHeld ? down : null); } catch (err) { logError(err, 'world'); }
 
   // Dragging files from Explorer: make the buddy under the pointer a drop target.
   let dropOver = null;
@@ -1270,10 +1464,38 @@ function toDip(r) {
   return { x: r.x / k, y: r.y / k, width: r.width / k, height: r.height / k };
 }
 
+let winHandles = new Map();
+
+/** The pinned and running apps on the taskbar (DIPs), from UI Automation. */
+function uiaTaskbar(timeout = 4000) {
+  if (OS !== 'win32') return Promise.resolve([]);
+  return new Promise((resolve) => {
+    const helper = startUia();
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    uiaWaiters.push((msg) => finish(msg && msg.ok ? (msg.buttons || []).map((r) => { const d = screen.screenToDipRect(null, { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.w), height: Math.round(r.h) }); return { x: d.x, y: d.y, w: d.width, h: d.height }; }) : []));
+    setTimeout(() => finish([]), timeout);
+    helper.stdin.write('taskbar\n');
+  });
+}
+
+/** A buddy drags something with the real mouse (slowly); the overlays let the mouse through meanwhile. */
+async function mischiefDrag(from, to, ms) {
+  if (OS !== 'win32' || mischiefInput) return { ok: false };
+  mischiefInput = true;
+  for (const o of overlays.values()) applyCapture(o);
+  try {
+    return await platform.slowDrag(screen.dipToScreenPoint(from), screen.dipToScreenPoint(to), ms);
+  } finally {
+    setTimeout(() => { mischiefInput = false; }, 300);
+  }
+}
+
 function scanWindows() {
   if (!platform.available) return;
   const list = platform.listWindows(process.pid);
   const wins = list.map((w) => ({ id: w.id, title: w.title, exe: w.exe, maximized: w.maximized, rect: toDip(w.rect) }));
+  winHandles = new Map(list.map((w) => [w.id, w.handle]));
   world.setWindows(wins);
   watchDialogs();
 
@@ -1281,6 +1503,7 @@ function scanWindows() {
   const fg = platform.foregroundId();
   const fgWin = wins.find((w) => w.id === fg);
   world.hiddenDisplays.clear();
+  world.focusWin = fgWin ? { id: fgWin.id, rect: fgWin.rect, maximized: fgWin.maximized } : null;
   if (fgWin) {
     for (const d of world.displays) {
       const r = fgWin.rect, db = d.bounds;
@@ -1328,10 +1551,16 @@ function startServer() {
       if (req.method === 'POST' && url.pathname === '/event') {
         const ev = await readJson(req);
         logEvent(ev);
-        sessions.handle(ev);
+        if (ev.buddy_command && ev.buddy_command.action === 'take' && ev.session_id) {
+          // "/buddy take" with no name means the buddy of the chat this one continues: look that up first.
+          const s = sessions.get(ev.session_id);
+          if (ev.transcript_path) s.transcript = ev.transcript_path;
+          await Promise.race([lineageOf(s), new Promise((r) => setTimeout(r, 1800))]).catch(() => {});
+        }
+        const message = sessions.handle(ev);
         try { countEvent(ev); } catch (err) { logError(err, 'stats'); }
         noteClient(ev);
-        return reply(200, { ok: true });
+        return reply(200, typeof message === 'string' ? { ok: true, message } : { ok: true });
       }
       if (req.method === 'POST' && url.pathname === '/permission') {
         // Hold the hook until you decide on the buddy; answer at once if this session has no buddy.
@@ -1462,6 +1691,10 @@ function startServer() {
         else if (act === 'hide') world.hideFor(b, Number(url.searchParams.get('min')) || 1);
         else if (act === 'workshop') openWorkshop(b.id, url.searchParams.get('tab') || undefined);
         else if (act === 'home') sendHome(b.id);
+        else if (act === 'move') { const to = sessions.map.get(url.searchParams.get('to')); const r = to && reassign(b.id, to); return reply(r ? 200 : 409, r || { error: 'could not move' }); }
+        else if (act === 'moves') return reply(200, { items: moveItems(b).map((i) => i.label) });
+        else if (act === 'mischief') { b.annoy = true; world.mischiefEnd(b); if (!world.mischiefStart(b, url.searchParams.get('kind') || 'insult')) return reply(409, { error: 'could not start' }); return reply(200, { kind: b.mischief && b.mischief.kind }); }
+        else if (act === 'done') { b.session.attention = 'done'; b.session.attentionSince = Date.now(); b.ackDone = false; b.hop = null; }
         else if (act === 'wake') world.wake(b);
         else if (act === 'shake') { b.queasy = Number(url.searchParams.get('n')) || 2; world.queasyShow(b); }
         else if (act === 'meet') {
@@ -1561,6 +1794,8 @@ function refreshTray() {
     { type: 'separator' },
     { label: 'Quit', click: quitApp },
   ]);
+  menu.on('menu-will-show', () => { trayMenuOpen = true; });
+  menu.on('menu-will-close', () => { trayMenuOpen = false; });
   tray.setContextMenu(menu);
   tray.setToolTip(`Claude Buddy (${live.length} ${live.length === 1 ? 'buddy' : 'buddies'})`);
 }

@@ -70,6 +70,8 @@ function parseCommand(prompt) {
   if (w === 'size' && value) return { action: 'size', value: value.toLowerCase() };
   if (['custom', 'customize', 'customise', 'look', 'wardrobe', 'style'].includes(w)) return { action: 'custom' };
   if (w === 'helpers' || w === 'subagents') return { action: 'helpers', value: /^(off|no|hide|false)$/i.test(value) ? 'off' : 'on' };
+  if (w === 'annoy' || w === 'mischief') return { action: 'annoy', value: /^(off|no|stop|false)$/i.test(value) ? 'off' : 'on' };
+  if (['take', 'adopt', 'claim'].includes(w)) return { action: 'take', value };
   return { action: 'summon' };
 }
 
@@ -114,6 +116,8 @@ const MESSAGES = {
   size: (v) => `Buddy size set: ${v} (laptop screen and other monitors have separate sizes).`,
   custom: 'Opening the Buddy Workshop on your desktop.',
   helpers: (v) => (v === 'off' ? 'Helper Clawds are hidden for this session.' : 'Helper Clawds will show up when this session uses sub-agents.'),
+  annoy: (v) => (v === 'off' ? 'Annoy mode is off. Your buddy is on its best behaviour.' : 'Annoy mode is on. When it has nothing to do for a while, expect mischief. (/buddy annoy off stops it)'),
+  take: 'Your buddy moved over to this session.', // (the app says which one)
 };
 
 async function permission(ev) {
@@ -161,7 +165,9 @@ async function main() {
   }
 
   ev.buddy_command = cmd;
-  let ok = await post(ev, 800).then(() => true, () => false);
+  const wait = cmd.action === 'take' ? 3000 : 800; // (it may read the transcript to see which chat this one continues)
+  let res = await post(ev, wait).catch(() => null);
+  let ok = !!res;
   if (!ok && cmd.action !== 'off' && !launchConfig()) {
     // Fresh from the plugin marketplace: install the desktop app, then build this buddy.
     const started = setupInBackground(ev);
@@ -171,12 +177,13 @@ async function main() {
   if (!ok && cmd.action !== 'off' && launchApp()) {
     for (let i = 0; i < 25 && !ok; i++) {
       await sleep(300);
-      ok = await post(ev, 800).then(() => true, () => false);
+      res = await post(ev, wait).catch(() => null);
+      ok = !!res;
     }
   }
   const msg = MESSAGES[cmd.action];
   const reason = ok
-    ? (typeof msg === 'function' ? msg(cmd.value) : msg)
+    ? (res && typeof res.message === 'string' && res.message) || (typeof msg === 'function' ? msg(cmd.value) : msg)
     : 'The Claude Buddy app is not running and could not be started. Run `npx github:sideswipeishacking/claude-buddy doctor` in a terminal to see why.';
   process.stdout.write(JSON.stringify({ decision: 'block', reason }));
 }

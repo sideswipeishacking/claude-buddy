@@ -187,6 +187,7 @@ module.exports = (H) => {
           const c = this.centre(b);
           if (fly(c.x, c.y - tall(b) * 0.5 - 56)) { d.phase = d.kind === 'carry' ? 'grab' : 'drop'; d.at = now; }
         } else if (d.phase === 'drop') {
+          if (b && (b.mode === 'wall' || b.mode === 'ceil') && d.kind === 'snack') this.letGo(b, 'jump'); // it hops down to catch it
           if (now - d.at > 260) {
             if (b && d.kind === 'snack') {
               this.items.push({ id: ++this.itemSeq, kind: 'cookie', x: d.x, y: d.y + 10, vx: 0, vy: 0, owner: b, born: now });

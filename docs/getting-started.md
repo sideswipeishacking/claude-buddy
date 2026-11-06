@@ -57,7 +57,7 @@ Your buddy is the polite way to notice Claude is waiting:
 | --- | --- |
 | `!` | Claude is asking for **permission** (to run a command, edit a file, …) |
 | `?` | Claude asked you a **question** |
-| `✓` | Claude **finished** its turn. It stays until you hover or click the buddy |
+| `✓` | Claude **finished** its turn. It stays until you hover or click the buddy (which jumps up at your cursor to make sure you notice) |
 | a red `%` | the session's context is over **90%** full, so compaction is near |
 
 For permission prompts the buddy shows **Allow / Always / Deny** buttons, both floating above it and in its hover card. Answer there or in Claude Code itself; whichever you use first counts. *Always* adds the same "don't ask again" rule Claude Code would.
@@ -129,6 +129,7 @@ Each Claude Code session gets its own buddy, so it's easy to keep an eye on seve
 - Different hats are picked automatically, and you can set a default look in the Workshop.
 - Separate sizes for your laptop screen and external monitors: `/buddy size laptop 2`, `/buddy size external 4`.
 - Buddies that hang around each other get friendly.
+- **Forked or continued a chat?** The Claude app runs it as a new session. Its buddy moves over by itself once the old session has gone quiet; to move it right away, type `/buddy take <name>` in the new session (or just `/buddy take`), or right-click the buddy → **Move to session**.
 
 ## 10. Sending a buddy home
 

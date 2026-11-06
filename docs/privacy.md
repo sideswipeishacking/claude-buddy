@@ -16,6 +16,7 @@ Nothing else goes over the network.
 | --- | --- | --- |
 | **Claude Code hook events**: event names, tool names and inputs, permission details, the text of your prompts, session id, working folder, transcript path | To animate the session and show its status (the card shows the task from your prompt) | Sent by the hook to the app on `127.0.0.1` only. Kept in memory |
 | **The end of the session transcript** | The buddy's card shows Claude's latest thought, and the context ring needs token counts | Read locally, never stored |
+| **The session ids at the start of a transcript** (sessions without a buddy) | A forked or continued chat starts with a copy of the old one, so its buddy can follow it | Read locally, kept in memory |
 | **Which app the session runs in**: the process ID the hook ran from, `TERM_PROGRAM`, the editor's process ID, whether it's Windows Terminal or tmux | To find the session's window | Kept in memory |
 | **Your window list**: positions, titles, program names | Buddies walk on title bars and avoid fullscreen apps | Read every fraction of a second, kept in memory |
 | **Keyboard**: only *whether* you pressed a letter-ish key, Backspace or Enter, never which key, and nothing while you hold Ctrl/Alt/Cmd | *Type along* | Not stored. On macOS it's off unless you turn it on |
@@ -33,6 +34,7 @@ So you're never surprised:
 - **Paste and press Enter** in a Claude Code session's prompt box: when you drop files on a buddy (no Enter), and once after a usage limit resets for sessions the limit interrupted (with Enter). It only does this after checking the right app is in front, and never in an IDE's built-in terminal panel.
 - **Answer a permission prompt**, only when you press Allow, Always or Deny on the buddy.
 - **Press "Open"** in a file dialog (Windows), after you clicked Open or pressed Enter there yourself.
+- **Annoy mode only** (off unless you turn it on for a buddy): minimize a window, and drag a pinned taskbar app one slot over by slowly moving your mouse (Windows; it stops as soon as you move the mouse yourself).
 - **Start itself through Windows' process service (WMI)** on Windows, so it runs outside the Claude app's sandbox (see [platforms](platforms.md#windows)). If your security software blocks that, it starts directly instead.
 
 ## Open source

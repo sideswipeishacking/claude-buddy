@@ -62,6 +62,7 @@ Electron's installer still verifies the download against the official checksums.
 
 - The session must have the plugin loaded: start it after installing the plugin, or run `/reload-plugins` in it.
 - Each session needs its own `/buddy`, unless you turned on *Buddy for every session* in Settings.
+- **Did you fork or continue the chat** (or did the Claude app start it afresh)? That's a new session, and the buddy is still on the old one. It moves over by itself once the old session has been quiet for 10 minutes. To move it now, type `/buddy take <name>` in the new session, or right-click the buddy → **Move to session**.
 - If another tool also uses port `47321`, set `CLAUDE_BUDDY_PORT` to something else, for both Claude Code and the app.
 
 ## Clicking a buddy brings up the wrong window

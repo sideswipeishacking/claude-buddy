@@ -176,6 +176,7 @@ class Session {
     this.lastErrorAt = 0;
     this.subagents = 0;
     this.lastEventAt = Date.now();
+    this.lastHookAt = 0; // its last real hook event
     this.agents = new Set(); // running sub-agents (SubagentStart/Stop carry an agent_id)
     this.agentEvents = false; // true once this session reports SubagentStart events
     this.note = null; // { text, until }: a short line for the card (e.g. a file that couldn't be handed over)
@@ -246,6 +247,7 @@ class Sessions extends EventEmitter {
     // Forget sessions that ended a good while ago.
     if (this.map.size > 40) for (const [id, x] of this.map) if (x.state === 'ended' && now - x.endedAt > 3600e3) this.map.delete(id);
     s.lastEventAt = now;
+    s.lastHookAt = now; // (lastEventAt is also bumped when a buddy is turned on; this is only real use)
     if (ev.cwd) { s.cwd = ev.cwd; s.name = projectName(ev.cwd); }
     if (ev.transcript_path) s.transcript = ev.transcript_path;
     if (ev.client || ev.entrypoint !== undefined) {
@@ -372,14 +374,19 @@ class Sessions extends EventEmitter {
     this.emit('update', s);
   }
 
+  /** A /buddy command. Returns the reply to show in Claude Code, when the app has one ("take"). */
   command(s, cmd) {
-    if (cmd.action === 'off') this.emit('dismiss', s);
+    const out = {};
+    if (cmd.action === 'take') this.emit('take', s, cmd.value || '', out);
+    else if (cmd.action === 'off') this.emit('dismiss', s);
     else if (cmd.action === 'name') { s.nickname = cmd.value.slice(0, 18); this.emit('summon', s, cmd); }
     else if (cmd.action === 'size') this.emit('size', s, cmd.value);
     else if (cmd.action === 'custom') this.emit('custom', s);
     else if (cmd.action === 'helpers') this.emit('helpers', s, cmd.value !== 'off');
+    else if (cmd.action === 'annoy') this.emit('annoy', s, cmd.value !== 'off');
     else this.emit('summon', s, cmd);
     this.emit('update', s);
+    return out.message;
   }
 
   setWorking(s, kind) {

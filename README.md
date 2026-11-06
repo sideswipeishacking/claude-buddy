@@ -21,14 +21,14 @@ Type `/buddy` in a Claude Code session and a little pixel creature gets built on
 
 ## Highlights
 
-- **One buddy per session.** Every Claude Code session you summon one for gets its own buddy, and helper buddies show up for sub-agents.
+- **One buddy per session.** Every Claude Code session you summon one for gets its own buddy, and helper buddies show up for sub-agents. Fork or continue a chat and its buddy follows it (or move it yourself with `/buddy take`).
 - **It shows what Claude is doing.** Dozens of animations for reading, searching, coding, testing, building, deploying, thinking and more. Hover a buddy to see the current step, Claude's latest thought and how full the context window is. (We won't spoil the rest.)
 - **It gets your attention for the right things.** A `!` for permission prompts, a `?` for questions, a `✓` when Claude is done. You can answer permission prompts with **Allow / Always / Deny** buttons right on the buddy.
 - **Click it to jump back.** Clicking a buddy brings its session to the front: the right terminal, IDE window or Claude app conversation.
 - **Feed it files.** Drag files onto a buddy and it eats them, and they land in that session's prompt box.
 - **The Overlord.** A watchful eye in the corner of your screen that builds new buddies. Hover it for your **session and weekly usage limits** and today's numbers; click it and it comes out of its corner with everything it can do: inspection patrols, a holo-report of your day, drones, the weather, and a boss fight your buddies can win (with your help). It has opinions about usage limits, and about most other things.
 - **The skyscraper.** Every buddy gets its own floor in a little tower at the bottom-left of your screen. The window lights up when it's home; flip the switch next to it to send it to work (or call it home). It takes the elevator, of course. Pop the tower up when you want it and tuck it into the ground when you don't.
-- **A life between jobs.** Idle buddies go looking for each other and chat in speech bubbles about what they're working on. Play fetch (they never give up on the ball), wake a sleepy one with a little shake… just don't overdo the shaking.
+- **A life between jobs.** Idle buddies go looking for each other and chat in speech bubbles about what they're working on. Play fetch (they never give up on the ball), wake a sleepy one with a little shake… just don't overdo the shaking. Or turn on **annoy mode** and let a bored buddy get up to mischief.
 - **Make it yours.** An RPG-style Buddy Workshop with 46 hats, wands, umbrellas, capes, jetpacks, colours and more, plus a room in the skyscraper to furnish however you like. Names, looks and settings are remembered per session.
 - **Polite.** Stays out of the way of fullscreen apps (unless something important happens), never sends anything anywhere except the usage check you'd expect, and costs no tokens: `/buddy` commands never reach the model.
 

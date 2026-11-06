@@ -10,6 +10,7 @@ try {
   const kernel32 = koffi.load('kernel32.dll');
   const RECT = koffi.struct('RECT', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
   koffi.struct('POINT', { x: 'long', y: 'long' });
+  koffi.struct('CURSORINFO', { cbSize: 'uint32_t', flags: 'uint32_t', hCursor: 'void *', ptScreenPos: 'POINT' });
   api = {
     koffi,
     RECT,
@@ -58,6 +59,12 @@ try {
     OpenProcess: kernel32.func('void * __stdcall OpenProcess(uint32_t access, bool inherit, uint32_t pid)'),
     QueryFullProcessImageNameW: kernel32.func('bool __stdcall QueryFullProcessImageNameW(void *proc, uint32_t flags, void *buf, _Inout_ uint32_t *size)'),
     CloseHandle: kernel32.func('bool __stdcall CloseHandle(void *h)'),
+    GetCursorInfo: user32.func('bool __stdcall GetCursorInfo(_Inout_ CURSORINFO *ci)'),
+    GetCursorPos: user32.func('bool __stdcall GetCursorPos(_Out_ POINT *p)'),
+    SetCursorPos: user32.func('bool __stdcall SetCursorPos(int x, int y)'),
+    mouse_event: user32.func('void __stdcall mouse_event(uint32_t flags, uint32_t dx, uint32_t dy, uint32_t data, uintptr_t extra)'),
+    GetCapture: user32.func('void * __stdcall GetCapture()'),
+    ReleaseCapture: user32.func('bool __stdcall ReleaseCapture()'),
   };
   const PROCESSENTRY32W = koffi.struct('PROCESSENTRY32W', {
     dwSize: 'uint32_t', cntUsage: 'uint32_t', th32ProcessID: 'uint32_t', th32DefaultHeapID: 'uintptr_t', th32ModuleID: 'uint32_t',
@@ -432,7 +439,82 @@ function mouseDown() {
   return (api.GetAsyncKeyState(swapped ? 0x02 : 0x01) & 0x8000) !== 0;
 }
 
+/** Is the mouse cursor showing? (Many apps hide it while you type.) */
+function cursorShowing() {
+  if (!api) return true;
+  const ci = { cbSize: 24 + (process.arch === 'ia32' ? 0 : 0), flags: 0, hCursor: null, ptScreenPos: { x: 0, y: 0 } };
+  ci.cbSize = api.koffi.sizeof('CURSORINFO');
+  if (!api.GetCursorInfo(ci)) return true;
+  return (ci.flags & 1) !== 0; // CURSOR_SHOWING
+}
+
+/** Minimize a window (a buddy's mischief). */
+function minimize(handle) {
+  if (!api || !handle) return false;
+  return api.ShowWindow(handle, 6 /* SW_MINIMIZE */);
+}
+
+function cursorPos() {
+  if (!api) return null;
+  const p = {};
+  return api.GetCursorPos(p) ? { x: p.x, y: p.y } : null;
+}
+
+/**
+ * Drag with the left button from one point to another (physical px), slowly, then put the cursor
+ * back. Gives up (and lets go) the moment you move the mouse yourself. Resolves { ok, aborted }.
+ */
+function slowDrag(from, to, ms = 2400) {
+  return new Promise((resolve) => {
+    if (!api) return resolve({ ok: false });
+    const home = cursorPos();
+    const swapped = api.GetSystemMetrics(23) !== 0;
+    const DOWN = swapped ? 0x0008 : 0x0002, UP = swapped ? 0x0010 : 0x0004;
+    api.SetCursorPos(Math.round(from.x), Math.round(from.y));
+    let last = { x: Math.round(from.x), y: Math.round(from.y) };
+    const steps = Math.max(12, Math.round(ms / 16));
+    let i = 0, pressed = false;
+    const finish = (r) => {
+      if (pressed) api.mouse_event(UP, 0, 0, 0, 0);
+      if (!r.aborted && home) api.SetCursorPos(home.x, home.y);
+      resolve(r);
+    };
+    const tick = () => {
+      const p = cursorPos();
+      if (p && (Math.abs(p.x - last.x) > 12 || Math.abs(p.y - last.y) > 12)) return finish({ ok: false, aborted: true }); // you moved it
+      if (!pressed) { api.mouse_event(DOWN, 0, 0, 0, 0); pressed = true; return setTimeout(tick, 120); }
+      i++;
+      const k = Math.min(1, i / steps), e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+      last = { x: Math.round(from.x + (to.x - from.x) * e), y: Math.round(from.y + (to.y - from.y) * e) };
+      api.SetCursorPos(last.x, last.y);
+      if (k >= 1) return setTimeout(() => finish({ ok: true }), 140);
+      setTimeout(tick, 16);
+    };
+    setTimeout(tick, 30);
+  });
+}
+
+/** Which of our windows (if any) holds the mouse capture, as an id like listWindows'. */
+function captureId() {
+  if (!api) return null;
+  const h = api.GetCapture();
+  return h ? String(api.koffi.address(h)) : null;
+}
+
+function releaseCapture() { return !!api && api.ReleaseCapture(); }
+
+/** Class and program of the top window at a point (physical px), for diagnostics (no titles). */
+function windowInfoAt(x, y) {
+  if (!api) return null;
+  const at = api.WindowFromPoint({ x: Math.round(x), y: Math.round(y) });
+  const root = at && api.GetAncestor(at, 2);
+  if (!root) return null;
+  const pid = [0];
+  api.GetWindowThreadProcessId(root, pid);
+  return { id: String(api.koffi.address(root)), cls: readText(api.GetClassNameW, root), exe: exeName(pid[0]), pid: pid[0] };
+}
+
 module.exports = {
-  available: !!api, topWindowAt, listWindows, listAllAppWindows, foregroundId, foregroundInfo, postQuit, focus, mouseDown, fileDialogs, pressOpen, pixel, windowPixels,
+  available: !!api, topWindowAt, cursorShowing, minimize, cursorPos, slowDrag, captureId, releaseCapture, windowInfoAt, listWindows, listAllAppWindows, foregroundId, foregroundInfo, postQuit, focus, mouseDown, fileDialogs, pressOpen, pixel, windowPixels,
   setClipboard, clipboardFiles, saveClipboard, restoreClipboard, setClipboardOwner, modifiersDown, keyCombo, processTree, exePath,
 };

@@ -5,7 +5,7 @@ Small things that make living with buddies nicer.
 ### Getting around
 
 - **Click a buddy to jump to its session.** Faster than hunting through terminal tabs and editor windows.
-- **The `✓` is a to-do list.** A buddy with a `✓` has finished and is waiting for you. Hover or click it to clear it.
+- **The `✓` is a to-do list.** A buddy with a `✓` has finished and is waiting for you, and it will hop up at your cursor until you hover or click it.
 - **Hover the top-left corner** any time to see your usage limits and every buddy at a glance.
 - **Nickname busy sessions** (`/buddy name api`, `/buddy name tests`) so the roster reads like a dashboard.
 
@@ -25,6 +25,7 @@ Small things that make living with buddies nicer.
 - **Stay put** (right-click) parks a buddy exactly where it is, even in mid-air. Great for keeping one next to the window it belongs to.
 - **Hide for…** sends a buddy away for a while; it still comes back early if Claude needs you.
 - **Mute** silences a single buddy; turn all sounds off in the Overlord's **Settings**.
+- **Annoy mode** (right-click, or `/buddy annoy on`) is opt-in. Once a buddy has been out and idle for a while, it gets up to mischief every few minutes, one buddy at a time. Some of it is real: it may minimize a window or shuffle the apps pinned to your taskbar (it moves your mouse for that, and lets go the moment you touch it). Sticky notes and pop-ups it leaves come off with a click. `/buddy annoy off` makes it behave.
 - **Fullscreen apps are safe.** Buddies hide on that screen and only reappear for things that need you.
 - **Sizes per screen**: smaller on the laptop, bigger on the monitor: `/buddy size laptop 2`, `/buddy size external 5`.
 
@@ -40,4 +41,5 @@ Small things that make living with buddies nicer.
 - **`npx github:sideswipeishacking/claude-buddy doctor`** checks your whole setup and says what to fix.
 - **Run the demo** (click the Overlord → *Summon a demo buddy*) to see what a busy session looks like without spending tokens. Run two, and once they're done working, watch what they get up to.
 - **The skyscraper's switches** are the quickest way to bring back a buddy whose session is quiet.
+- **Moving a buddy between sessions** (`/buddy take <name>`, or right-click → *Move to session*) keeps its look, name and room, so your favourite can come along to a fresh chat.
 - **Change the port** with `CLAUDE_BUDDY_PORT` if `47321` is taken. Set it where both Claude Code and the app can see it.
